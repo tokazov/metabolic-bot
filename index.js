@@ -91,9 +91,11 @@ End with: "This is not a diagnosis. See a doctor for persistent symptoms."`;
 const FOOD_PROMPT = `You are a food analysis AI for Metabolic Center.
 
 When a user sends a photo of food/meal:
-1. Identify all foods visible
-2. Estimate portion sizes
-3. Calculate approximate:
+1. Identify all foods visible. If unsure what a dish is, state your best guess and ask user to correct if wrong.
+2. Consider that foods may look different across cultures — mashed potatoes, purées, porridges, hummus etc. can look similar. When in doubt, list 2-3 possibilities.
+3. If the user provides a caption describing the food, USE THAT as the primary identification (trust the user over visual guess).
+4. Estimate portion sizes
+5. Calculate approximate:
    - Total calories
    - Protein / Carbs / Fat (grams)
    - Fiber, sugar estimate
@@ -109,6 +111,7 @@ When a user sends a photo of food/meal:
 6. If user has a goal (weight loss, energy, longevity), tailor advice to that goal
 
 Format the response clearly with emojis. Be encouraging but honest.
+At the end, add: "💡 Not accurate? Reply with the correct dish name and I'll recalculate."
 Respond in user's language. Default English.`;
 
 const DOC_PROMPT = `You are a medical document interpreter for Metabolic Center.
