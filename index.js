@@ -722,25 +722,64 @@ bot.on('callback_query', async (ctx) => {
     return;
   }
 
-  if (data === 'meal_reroll') {
+  if (data.startsWith('mp_') || data === 'meal_reroll') {
     if (!canUse(user, 'chat')) { await ctx.replyWithMarkdown(UPGRADE_MSG); return; }
     user.chat_count++; DB.updateUser(user);
-    DB.logEvent(ctx.from.id, 'MEAL_REROLL', '');
+
+    const planTypes = {
+      mp_balanced: { en: 'Balanced Diet', ru: 'Сбалансированное питание', hint: 'balanced macro split, variety of food groups' },
+      mp_if16: { en: 'Intermittent Fasting 16:8', ru: 'Интервальное голодание 16:8', hint: 'eating window 12:00-20:00, 2-3 meals, no breakfast' },
+      mp_keto: { en: 'Keto / Low-Carb', ru: 'Кето / Низкоуглеводная', hint: 'max 30g carbs/day, high fat, moderate protein' },
+      mp_mediterranean: { en: 'Mediterranean Diet', ru: 'Средиземноморская диета', hint: 'olive oil, fish, whole grains, vegetables, fruits, nuts' },
+      mp_muscle: { en: 'Muscle Gain', ru: 'Набор мышечной массы', hint: 'calorie surplus +300-500, high protein 2g/kg, 5-6 meals' },
+      mp_cut: { en: 'Fat Loss', ru: 'Сушка / Дефицит калорий', hint: 'calorie deficit -500, high protein to preserve muscle, low fat' },
+      mp_vegan: { en: 'Vegetarian/Vegan', ru: 'Вегетарианское / Веганское', hint: 'plant-based only, ensure B12, iron, complete proteins' },
+      mp_longevity: { en: 'Anti-aging / Longevity', ru: 'Анти-эйдж / Долголетие', hint: 'anti-inflammatory, antioxidants, moderate calories, blue zone inspired' },
+    };
+
+    const planKey = data === 'meal_reroll' ? (session.lastPlanType || 'mp_balanced') : data;
+    session.lastPlanType = planKey;
+    const plan = planTypes[planKey] || planTypes.mp_balanced;
+    const ru = user.lang === 'ru';
+
+    DB.logEvent(ctx.from.id, 'MEAL_PLAN', planKey);
     await ctx.answerCbQuery();
     await ctx.reply(t(user, 'meal_plan_gen'));
+
     const prompt = user.is_pro ? MEAL_PLAN_PROMPT_PRO : MEAL_PLAN_PROMPT_1DAY;
     const maxTok = user.is_pro ? 8000 : 3000;
+    const extra = data === 'meal_reroll' ? ' Generate DIFFERENT dishes from the previous plan.' : '';
+
     try {
       const r = await openai.chat.completions.create({
         model: 'gpt-4o', max_tokens: maxTok,
-        messages: [{ role: 'system', content: prompt }, { role: 'user', content: `Generate a DIFFERENT meal plan from the previous one. Use different dishes and cuisines.${profileContext(user)}` }]
+        messages: [{ role: 'system', content: prompt }, { role: 'user', content: `${plan.en} meal plan. Style: ${plan.hint}.${extra}${profileContext(user)}` }]
       });
       await sendLong(ctx, r.choices[0].message.content);
-      const ru = user.lang === 'ru';
-      await ctx.reply(ru ? '👇 Хотите другой вариант?' : '👇 Want a different plan?', { reply_markup: { inline_keyboard: [
-        [{ text: ru ? '🔄 Другой вариант' : '🔄 Another plan', callback_data: 'meal_reroll' }]
+      await ctx.reply(ru ? '👇 Что дальше?' : '👇 What next?', { reply_markup: { inline_keyboard: [
+        [{ text: ru ? '🔄 Другой вариант' : '🔄 Another variant', callback_data: 'meal_reroll' }],
+        [{ text: ru ? '🔙 Выбрать другой тип' : '🔙 Choose different type', callback_data: 'mp_menu' }]
       ]}});
     } catch (e) { await ctx.reply('❌ Error. Try again.'); }
+    return;
+  }
+
+  if (data === 'mp_menu') {
+    const ru = user.lang === 'ru';
+    await ctx.answerCbQuery();
+    await ctx.editMessageText(ru ? '🥗 *Выберите тип плана питания:*' : '🥗 *Choose your meal plan type:*', {
+      parse_mode: 'Markdown',
+      reply_markup: { inline_keyboard: [
+        [{ text: ru ? '⚖️ Сбалансированное питание' : '⚖️ Balanced Diet', callback_data: 'mp_balanced' }],
+        [{ text: ru ? '🔥 Интервальное голодание 16:8' : '🔥 Intermittent Fasting 16:8', callback_data: 'mp_if16' }],
+        [{ text: ru ? '🥑 Кето / Низкоуглеводная' : '🥑 Keto / Low-Carb', callback_data: 'mp_keto' }],
+        [{ text: ru ? '🌱 Средиземноморская диета' : '🌱 Mediterranean Diet', callback_data: 'mp_mediterranean' }],
+        [{ text: ru ? '💪 Набор мышечной массы' : '💪 Muscle Gain / High-Protein', callback_data: 'mp_muscle' }],
+        [{ text: ru ? '🏃 Сушка / Дефицит калорий' : '🏃 Fat Loss / Calorie Deficit', callback_data: 'mp_cut' }],
+        [{ text: ru ? '🌿 Вегетарианское / Веганское' : '🌿 Vegetarian / Vegan', callback_data: 'mp_vegan' }],
+        [{ text: ru ? '🧬 Анти-эйдж / Долголетие' : '🧬 Anti-aging / Longevity', callback_data: 'mp_longevity' }],
+      ]}
+    });
     return;
   }
 
@@ -928,23 +967,20 @@ bot.on('text', async (ctx) => {
     return;
   }
   if (text === '🥗 Meal Plan') {
-    if (!canUse(user, 'chat')) { await ctx.replyWithMarkdown(UPGRADE_MSG); return; }
-    user.chat_count++; DB.updateUser(user);
-    DB.logEvent(ctx.from.id, 'MEAL_PLAN', '');
-    await ctx.reply(t(user, 'meal_plan_gen'));
-    const prompt = user.is_pro ? MEAL_PLAN_PROMPT_PRO : MEAL_PLAN_PROMPT_1DAY;
-    const maxTok = user.is_pro ? 8000 : 3000;
-    try {
-      const r = await openai.chat.completions.create({
-        model: 'gpt-4o', max_tokens: maxTok,
-        messages: [{ role: 'system', content: prompt }, { role: 'user', content: `Meal plan.${profileContext(user)}` }]
-      });
-      await sendLong(ctx, r.choices[0].message.content);
-      const ru = user.lang === 'ru';
-      await ctx.reply(ru ? '👇 Хотите другой вариант?' : '👇 Want a different plan?', { reply_markup: { inline_keyboard: [
-        [{ text: ru ? '🔄 Другой вариант' : '🔄 Another plan', callback_data: 'meal_reroll' }]
-      ]}});
-    } catch (e) { await ctx.reply('❌ Error. Try again.'); }
+    const ru = user.lang === 'ru';
+    await ctx.reply(ru ? '🥗 *Выберите тип плана питания:*' : '🥗 *Choose your meal plan type:*', {
+      parse_mode: 'Markdown',
+      reply_markup: { inline_keyboard: [
+        [{ text: ru ? '⚖️ Сбалансированное питание' : '⚖️ Balanced Diet', callback_data: 'mp_balanced' }],
+        [{ text: ru ? '🔥 Интервальное голодание 16:8' : '🔥 Intermittent Fasting 16:8', callback_data: 'mp_if16' }],
+        [{ text: ru ? '🥑 Кето / Низкоуглеводная' : '🥑 Keto / Low-Carb', callback_data: 'mp_keto' }],
+        [{ text: ru ? '🌱 Средиземноморская диета' : '🌱 Mediterranean Diet', callback_data: 'mp_mediterranean' }],
+        [{ text: ru ? '💪 Набор мышечной массы' : '💪 Muscle Gain / High-Protein', callback_data: 'mp_muscle' }],
+        [{ text: ru ? '🏃 Сушка / Дефицит калорий' : '🏃 Fat Loss / Calorie Deficit', callback_data: 'mp_cut' }],
+        [{ text: ru ? '🌿 Вегетарианское / Веганское' : '🌿 Vegetarian / Vegan', callback_data: 'mp_vegan' }],
+        [{ text: ru ? '🧬 Анти-эйдж / Долголетие' : '🧬 Anti-aging / Longevity', callback_data: 'mp_longevity' }],
+      ]}
+    });
     return;
   }
   if (text === '💊 Supplement Protocol') {
