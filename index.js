@@ -1,6 +1,8 @@
 const { Telegraf, Markup } = require('telegraf');
 const OpenAI = require('openai');
 const https = require('https');
+const http = require('http');
+const crypto = require('crypto');
 const DB = require('./db');
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
@@ -459,7 +461,8 @@ bot.on('text', async (ctx) => {
   }
   if (text === '⭐ Upgrade to Pro') {
     DB.logEvent(ctx.from.id, 'UPGRADE_CLICK', '');
-    await ctx.replyWithMarkdown(`⭐ *Metabolic Center Pro — $19/mo*\n\n✦ Unlimited everything\n✦ Priority AI processing\n\n_Founding price locked forever._\n\n👉 [Subscribe Now](${CHECKOUT_URL})`);
+    const personalUrl = `${CHECKOUT_URL}?checkout[custom][telegram_id]=${ctx.from.id}`;
+    await ctx.replyWithMarkdown(`⭐ *Metabolic Center Pro — $19/mo*\n\n✦ Unlimited everything\n✦ Priority AI processing\n\n_Founding price locked forever._\n\n👉 [Subscribe Now](${personalUrl})`);
     return;
   }
 
@@ -484,8 +487,84 @@ bot.on('text', async (ctx) => {
   }
 });
 
+// ─── Webhook server for LemonSqueezy ───
+const WEBHOOK_SECRET = process.env.LEMON_WEBHOOK_SECRET || '';
+const PORT = process.env.PORT || 3000;
+
+const server = http.createServer((req, res) => {
+  if (req.method === 'POST' && req.url === '/webhook/lemon') {
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', () => {
+      try {
+        // Verify signature if secret is set
+        if (WEBHOOK_SECRET) {
+          const sig = req.headers['x-signature'] || '';
+          const hmac = crypto.createHmac('sha256', WEBHOOK_SECRET).update(body).digest('hex');
+          if (sig !== hmac) {
+            console.error('Invalid webhook signature');
+            res.writeHead(401);
+            res.end('Invalid signature');
+            return;
+          }
+        }
+
+        const data = JSON.parse(body);
+        const eventName = data.meta?.event_name;
+        const email = data.data?.attributes?.user_email;
+        const customData = data.meta?.custom_data || {};
+        const telegramId = customData.telegram_id;
+
+        console.log(`Webhook: ${eventName} | email: ${email} | tg: ${telegramId}`);
+        DB.logEvent(telegramId || 0, 'WEBHOOK', `${eventName} | ${email}`);
+
+        // Activate Pro on subscription created
+        if (eventName === 'subscription_created' || eventName === 'order_created') {
+          if (telegramId) {
+            const user = DB.getUser(parseInt(telegramId));
+            if (user) {
+              user.is_pro = 1;
+              DB.updateUser(user);
+              DB.logEvent(telegramId, 'PRO_ACTIVATED', email);
+              // Notify user
+              bot.telegram.sendMessage(telegramId, '🎉 *Welcome to Metabolic Center Pro!*\n\nYou now have unlimited access to all features. Enjoy!', { parse_mode: 'Markdown' }).catch(console.error);
+            }
+          }
+        }
+
+        // Deactivate on subscription expired/cancelled
+        if (eventName === 'subscription_expired' || eventName === 'subscription_cancelled') {
+          if (telegramId) {
+            const user = DB.getUser(parseInt(telegramId));
+            if (user) {
+              user.is_pro = 0;
+              DB.updateUser(user);
+              DB.logEvent(telegramId, 'PRO_DEACTIVATED', email);
+            }
+          }
+        }
+
+        res.writeHead(200);
+        res.end('OK');
+      } catch (e) {
+        console.error('Webhook error:', e);
+        res.writeHead(500);
+        res.end('Error');
+      }
+    });
+  } else if (req.method === 'GET' && req.url === '/health') {
+    res.writeHead(200);
+    res.end('OK');
+  } else {
+    res.writeHead(404);
+    res.end('Not found');
+  }
+});
+
+server.listen(PORT, () => console.log(`Webhook server on port ${PORT}`));
+
 // ─── Launch ───
 bot.catch((err) => console.error('Bot error:', err));
 bot.launch().then(() => console.log('🧬 Metabolic Center Bot is running!'));
-process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
+process.once('SIGINT', () => { bot.stop('SIGINT'); server.close(); });
+process.once('SIGTERM', () => { bot.stop('SIGTERM'); server.close(); });
