@@ -1,0 +1,5 @@
+node_modules/
+users.json
+activity.log
+bot.log
+.env
