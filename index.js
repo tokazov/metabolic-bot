@@ -198,6 +198,34 @@ bot.start(async (ctx) => {
   }, 1000);
 });
 
+// Admin: activate Pro for user
+bot.command('activate', async (ctx) => {
+  if (ctx.from.id !== ADMIN_ID) return;
+  const args = ctx.message.text.split(' ');
+  const targetId = parseInt(args[1]);
+  if (!targetId) { await ctx.reply('Usage: /activate <telegram_user_id>'); return; }
+  const user = DB.getUser(targetId);
+  if (!user) { await ctx.reply('User not found.'); return; }
+  user.is_pro = 1;
+  DB.updateUser(user);
+  DB.logEvent(targetId, 'PRO_ACTIVATED', 'manual by admin');
+  bot.telegram.sendMessage(targetId, '🎉 *Welcome to Metabolic Center Pro!*\n\nYou now have unlimited access to all features. Enjoy!', { parse_mode: 'Markdown' }).catch(() => {});
+  await ctx.reply(`✅ User ${targetId} activated as Pro.`);
+});
+
+// Admin: deactivate Pro
+bot.command('deactivate', async (ctx) => {
+  if (ctx.from.id !== ADMIN_ID) return;
+  const args = ctx.message.text.split(' ');
+  const targetId = parseInt(args[1]);
+  if (!targetId) { await ctx.reply('Usage: /deactivate <telegram_user_id>'); return; }
+  const user = DB.getUser(targetId);
+  if (!user) { await ctx.reply('User not found.'); return; }
+  user.is_pro = 0;
+  DB.updateUser(user);
+  await ctx.reply(`❌ User ${targetId} Pro deactivated.`);
+});
+
 bot.command('stats', async (ctx) => {
   if (ctx.from.id !== ADMIN_ID) return;
   const s = DB.stats();
