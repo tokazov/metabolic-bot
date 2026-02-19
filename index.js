@@ -58,6 +58,13 @@ const i18n = {
     pregnant_q: '🤰 Are you pregnant or breastfeeding?',
     preg_yes: '🤰 Pregnant', preg_bf: '🤱 Breastfeeding', preg_no: '❌ No',
     age_q: '📅 Your age? (type a number)',
+    height_q: '📏 Your height in cm? (e.g. 175)',
+    weight_q: '⚖️ Your weight in kg? (e.g. 80)',
+    activity_q: '🏃 Your activity level?',
+    activity_low: '🧘 Low (sedentary)',
+    activity_moderate: '🚶 Moderate (3-4x/week)',
+    activity_high: '🏋️ High (5-7x/week)',
+    activity_athlete: '🏅 Athlete (2x/day)',
     goal_q: '🎯 Primary goal?',
     goal_energy: '⚡ Energy & Performance', goal_longevity: '🧬 Longevity', goal_weight: '⚖️ Weight', goal_general: '💚 General Health',
     profile_done: '✅ Profile complete! Use the menu below 👇',
@@ -99,6 +106,13 @@ const i18n = {
     pregnant_q: '🤰 Вы беременны или кормите грудью?',
     preg_yes: '🤰 Беременна', preg_bf: '🤱 Кормлю грудью', preg_no: '❌ Нет',
     age_q: '📅 Ваш возраст? (введите число)',
+    height_q: '📏 Ваш рост в см? (например 175)',
+    weight_q: '⚖️ Ваш вес в кг? (например 80)',
+    activity_q: '🏃 Уровень активности?',
+    activity_low: '🧘 Низкий (сидячий образ жизни)',
+    activity_moderate: '🚶 Средний (3-4 раза/нед)',
+    activity_high: '🏋️ Высокий (5-7 раз/нед)',
+    activity_athlete: '🏅 Атлет (2 раза/день)',
     goal_q: '🎯 Главная цель?',
     goal_energy: '⚡ Энергия', goal_longevity: '🧬 Долголетие', goal_weight: '⚖️ Вес', goal_general: '💚 Общее здоровье',
     profile_done: '✅ Профиль готов! Используйте меню 👇',
@@ -263,6 +277,9 @@ async function getImageBase64(ctx, fileId) {
 function profileContext(user) {
   if (!user || (!user.gender && !user.age)) return '';
   let s = `\nPatient: ${user.gender || '?'}, ${user.age || '?'} years`;
+  if (user.height) s += `, ${user.height} cm`;
+  if (user.weight) s += `, ${user.weight} kg`;
+  if (user.activity_level) s += `, activity: ${user.activity_level}`;
   if (user.pregnancy_status && user.pregnancy_status !== 'not pregnant') s += `, ${user.pregnancy_status}`;
   if (user.goal) s += `. Goal: ${user.goal}`;
   const lang = user.lang === 'ru' ? 'Russian' : 'English';
@@ -548,13 +565,33 @@ bot.on('callback_query', async (ctx) => {
     return;
   }
 
+  if (data.startsWith('act_')) {
+    const levels = { act_low: 'Sedentary', act_moderate: 'Moderate', act_high: 'High', act_athlete: 'Athlete' };
+    const levelsRu = { act_low: 'Низкий', act_moderate: 'Средний', act_high: 'Высокий', act_athlete: 'Атлет' };
+    user.activity_level = levels[data];
+    DB.updateUser(user);
+    session.step = 'goal';
+    await ctx.answerCbQuery();
+    const label = user.lang === 'ru' ? levelsRu[data] : levels[data];
+    await ctx.editMessageText(`✅ ${label}`);
+    await ctx.reply(t(user, 'goal_q'), { reply_markup: { inline_keyboard: [
+      [{ text: t(user, 'goal_energy'), callback_data: 'goal_energy' }],
+      [{ text: t(user, 'goal_longevity'), callback_data: 'goal_longevity' }],
+      [{ text: t(user, 'goal_weight'), callback_data: 'goal_weight' }],
+      [{ text: t(user, 'goal_general'), callback_data: 'goal_general' }]
+    ]}});
+    return;
+  }
+
   if (data.startsWith('goal_')) {
     const goals = { goal_energy: 'Energy & Performance', goal_longevity: 'Longevity & Anti-aging', goal_weight: 'Weight Optimization', goal_general: 'General Health' };
+    const goalsRu = { goal_energy: 'Энергия и производительность', goal_longevity: 'Долголетие', goal_weight: 'Оптимизация веса', goal_general: 'Общее здоровье' };
     user.goal = goals[data];
     DB.updateUser(user);
     session.step = 'ready';
     await ctx.answerCbQuery();
-    await ctx.editMessageText(`✅ ${user.goal}`);
+    const label = user.lang === 'ru' ? goalsRu[data] : goals[data];
+    await ctx.editMessageText(`✅ ${label}`);
     await ctx.reply(t(user, 'profile_done'), getMenu(user));
   }
 });
@@ -651,15 +688,43 @@ bot.on('text', async (ctx) => {
     if (age > 0 && age < 120) {
       user.age = age;
       DB.updateUser(user);
-      session.step = 'goal';
-      await ctx.reply(`✅ ${age}\n\n${t(user, 'goal_q')}`, { reply_markup: { inline_keyboard: [
-        [{ text: t(user, 'goal_energy'), callback_data: 'goal_energy' }],
-        [{ text: t(user, 'goal_longevity'), callback_data: 'goal_longevity' }],
-        [{ text: t(user, 'goal_weight'), callback_data: 'goal_weight' }],
-        [{ text: t(user, 'goal_general'), callback_data: 'goal_general' }]
+      session.step = 'height';
+      await ctx.reply(`✅ ${age}\n\n${t(user, 'height_q')}`);
+    } else {
+      await ctx.reply(user.lang === 'ru' ? 'Введите корректный возраст (1-119).' : 'Enter valid age (1-119).');
+    }
+    return;
+  }
+
+  // Onboarding: height
+  if (session.step === 'height') {
+    const h = parseInt(text);
+    if (h > 50 && h < 300) {
+      user.height = h;
+      DB.updateUser(user);
+      session.step = 'weight';
+      await ctx.reply(`✅ ${h} ${user.lang === 'ru' ? 'см' : 'cm'}\n\n${t(user, 'weight_q')}`);
+    } else {
+      await ctx.reply(user.lang === 'ru' ? 'Введите рост в см (50-300).' : 'Enter height in cm (50-300).');
+    }
+    return;
+  }
+
+  // Onboarding: weight
+  if (session.step === 'weight') {
+    const w = parseFloat(text);
+    if (w > 20 && w < 500) {
+      user.weight = w;
+      DB.updateUser(user);
+      session.step = 'activity';
+      await ctx.reply(`✅ ${w} ${user.lang === 'ru' ? 'кг' : 'kg'}\n\n${t(user, 'activity_q')}`, { reply_markup: { inline_keyboard: [
+        [{ text: t(user, 'activity_low'), callback_data: 'act_low' }],
+        [{ text: t(user, 'activity_moderate'), callback_data: 'act_moderate' }],
+        [{ text: t(user, 'activity_high'), callback_data: 'act_high' }],
+        [{ text: t(user, 'activity_athlete'), callback_data: 'act_athlete' }]
       ]}});
     } else {
-      await ctx.reply('Enter valid age (1-119).');
+      await ctx.reply(user.lang === 'ru' ? 'Введите вес в кг (20-500).' : 'Enter weight in kg (20-500).');
     }
     return;
   }
@@ -771,6 +836,9 @@ bot.on('text', async (ctx) => {
       `${ru ? 'Пол' : 'Sex'}: ${user.gender || (ru ? 'Не указан' : 'Not set')}`,
       user.pregnancy_status && user.pregnancy_status !== 'not pregnant' ? `${ru ? 'Статус' : 'Status'}: ${user.pregnancy_status}` : null,
       `${ru ? 'Возраст' : 'Age'}: ${user.age || (ru ? 'Не указан' : 'Not set')}`,
+      `${ru ? 'Рост' : 'Height'}: ${user.height ? user.height + (ru ? ' см' : ' cm') : (ru ? 'Не указан' : 'Not set')}`,
+      `${ru ? 'Вес' : 'Weight'}: ${user.weight ? user.weight + (ru ? ' кг' : ' kg') : (ru ? 'Не указан' : 'Not set')}`,
+      `${ru ? 'Активность' : 'Activity'}: ${user.activity_level || (ru ? 'Не указана' : 'Not set')}`,
       `${ru ? 'Цель' : 'Goal'}: ${user.goal || (ru ? 'Не указана' : 'Not set')}`,
       `\n📊 *${ru ? 'Использование' : 'Usage'}*`,
       `${ru ? 'Анализы' : 'Analyses'}: ${user.analysis_count}/${user.is_pro ? '∞' : FREE_ANALYSIS_LIMIT}`,
