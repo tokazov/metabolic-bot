@@ -65,6 +65,15 @@ const i18n = {
     activity_moderate: '🚶 Moderate (3-4x/week)',
     activity_high: '🏋️ High (5-7x/week)',
     activity_athlete: '🏅 Athlete (2x/day)',
+    diet_q: '🍽 Any dietary restrictions? (pick all that apply, then press Done)',
+    diet_none: '✅ No restrictions',
+    diet_vegetarian: '🥬 Vegetarian',
+    diet_vegan: '🌱 Vegan',
+    diet_gluten_free: '🚫🌾 Gluten-free',
+    diet_lactose_free: '🚫🥛 Lactose-free',
+    diet_halal: '☪️ Halal',
+    diet_keto: '🥑 Keto',
+    diet_done: '✅ Done',
     goal_q: '🎯 Primary goal?',
     goal_energy: '⚡ Energy & Performance', goal_longevity: '🧬 Longevity', goal_weight: '⚖️ Weight', goal_general: '💚 General Health',
     profile_done: '✅ Profile complete! Use the menu below 👇',
@@ -113,6 +122,15 @@ const i18n = {
     activity_moderate: '🚶 Средний (3-4 раза/нед)',
     activity_high: '🏋️ Высокий (5-7 раз/нед)',
     activity_athlete: '🏅 Атлет (2 раза/день)',
+    diet_q: '🍽 Есть ограничения в питании? (выберите все подходящие, потом нажмите Готово)',
+    diet_none: '✅ Нет ограничений',
+    diet_vegetarian: '🥬 Вегетарианство',
+    diet_vegan: '🌱 Веганство',
+    diet_gluten_free: '🚫🌾 Без глютена',
+    diet_lactose_free: '🚫🥛 Без лактозы',
+    diet_halal: '☪️ Халяль',
+    diet_keto: '🥑 Кето',
+    diet_done: '✅ Готово',
     goal_q: '🎯 Главная цель?',
     goal_energy: '⚡ Энергия', goal_longevity: '🧬 Долголетие', goal_weight: '⚖️ Вес', goal_general: '💚 Общее здоровье',
     profile_done: '✅ Профиль готов! Используйте меню 👇',
@@ -214,9 +232,68 @@ You help with: metabolic health, nutrition, supplements, sleep, exercise, biomar
 Be concise, evidence-based, actionable. Do not respond in Spanish or any other language unless explicitly told.
 End health advice with: "This is AI-generated guidance, not medical advice."`;
 
-const MEAL_PLAN_PROMPT = `You are a precision nutrition AI for Metabolic Center.
-Generate a detailed personalized meal plan. Include: daily calories, macros, breakfast/lunch/dinner/snacks with portions, meal timing, foods to avoid, hydration, weekly shopping list.
-Tailor to goal and profile. Do not respond in Spanish or any other language unless explicitly told.`;
+const MEAL_PLAN_PROMPT_1DAY = `You are a precision nutrition AI for Metabolic Center.
+Generate a detailed 1-DAY personalized meal plan.
+
+FORMAT (use this exact structure with emojis):
+━━━━━━━━━━━━━━━━━━━━━
+📊 *Daily Target: XXXXkcal | P: XXXg | C: XXXg | F: XXXg*
+━━━━━━━━━━━━━━━━━━━━━
+
+🌅 *Breakfast (XX:XX)* — XXX kcal
+• [dish with portion] — P/C/F
+
+🥗 *Lunch (XX:XX)* — XXX kcal
+• [dish with portion] — P/C/F
+
+🥜 *Snack (XX:XX)* — XXX kcal
+• [dish with portion] — P/C/F
+
+🍽 *Dinner (XX:XX)* — XXX kcal
+• [dish with portion] — P/C/F
+
+💧 *Hydration:* X liters water/day
+🚫 *Avoid:* [list based on goal]
+
+At the end add: "🔒 *Full 7-day plan + shopping list → Pro*"
+
+RULES:
+- Calculate calories based on profile (weight, height, age, activity, goal)
+- Respect ALL dietary restrictions
+- Be specific with portions (grams)
+- Keep it practical — real dishes, easy to cook`;
+
+const MEAL_PLAN_PROMPT_PRO = `You are a precision nutrition AI for Metabolic Center.
+Generate a detailed 7-DAY personalized meal plan with variety.
+
+FORMAT for each day:
+━━━━━━━━━━━━━━━━━━━━━
+📅 *Day X — [theme, e.g. Mediterranean, Asian, etc.]*
+📊 *XXXXkcal | P: XXXg | C: XXXg | F: XXXg*
+
+🌅 *Breakfast (XX:XX)* — XXX kcal
+• [dish with portion]
+
+🥗 *Lunch (XX:XX)* — XXX kcal
+• [dish with portion]
+
+🥜 *Snack (XX:XX)* — XXX kcal
+• [dish with portion]
+
+🍽 *Dinner (XX:XX)* — XXX kcal
+• [dish with portion]
+
+After all 7 days, add:
+🛒 *SHOPPING LIST (week):*
+Group by category: 🥩 Protein | 🥬 Vegetables | 🍎 Fruits | 🌾 Grains | 🥛 Dairy | 🥫 Other
+
+RULES:
+- Calculate calories based on profile (weight, height, age, activity, goal)
+- Respect ALL dietary restrictions
+- Vary dishes — don't repeat meals
+- Be specific with portions (grams)
+- Keep it practical — real dishes, easy to cook`;
+
 
 const SUPPLEMENT_PROMPT = `You are a supplement protocol AI for Metabolic Center.
 Create personalized evidence-based supplement protocol. Include: exact dosages, timing, morning vs evening stack, with food vs empty stomach, best forms, interactions, expected timeline.
@@ -282,6 +359,7 @@ function profileContext(user) {
   if (user.height) s += `, ${user.height} cm`;
   if (user.weight) s += `, ${user.weight} kg`;
   if (user.activity_level) s += `, activity: ${user.activity_level}`;
+  if (user.diet_restrictions) s += `. Diet restrictions: ${user.diet_restrictions}`;
   if (user.pregnancy_status && user.pregnancy_status !== 'not pregnant') s += `, ${user.pregnancy_status}`;
   if (user.goal) s += `. Goal: ${user.goal}`;
   return s + '.';
@@ -570,16 +648,86 @@ bot.on('callback_query', async (ctx) => {
     const levelsRu = { act_low: 'Низкий', act_moderate: 'Средний', act_high: 'Высокий', act_athlete: 'Атлет' };
     user.activity_level = levels[data];
     DB.updateUser(user);
-    session.step = 'goal';
+    session.step = 'diet';
+    session.dietSelections = [];
     await ctx.answerCbQuery();
     const label = user.lang === 'ru' ? levelsRu[data] : levels[data];
     await ctx.editMessageText(`✅ ${label}`);
-    await ctx.reply(t(user, 'goal_q'), { reply_markup: { inline_keyboard: [
-      [{ text: t(user, 'goal_energy'), callback_data: 'goal_energy' }],
-      [{ text: t(user, 'goal_longevity'), callback_data: 'goal_longevity' }],
-      [{ text: t(user, 'goal_weight'), callback_data: 'goal_weight' }],
-      [{ text: t(user, 'goal_general'), callback_data: 'goal_general' }]
+    await ctx.reply(t(user, 'diet_q'), { reply_markup: { inline_keyboard: [
+      [{ text: t(user, 'diet_none'), callback_data: 'diet_none' }],
+      [{ text: t(user, 'diet_vegetarian'), callback_data: 'diet_vegetarian' }],
+      [{ text: t(user, 'diet_vegan'), callback_data: 'diet_vegan' }],
+      [{ text: t(user, 'diet_gluten_free'), callback_data: 'diet_gf' }],
+      [{ text: t(user, 'diet_lactose_free'), callback_data: 'diet_lf' }],
+      [{ text: t(user, 'diet_halal'), callback_data: 'diet_halal' }],
+      [{ text: t(user, 'diet_keto'), callback_data: 'diet_keto' }],
+      [{ text: t(user, 'diet_done'), callback_data: 'diet_done' }]
     ]}});
+    return;
+  }
+
+  if (data.startsWith('diet_')) {
+    if (!session.dietSelections) session.dietSelections = [];
+    if (data === 'diet_none') {
+      session.dietSelections = [];
+      user.diet_restrictions = '';
+      DB.updateUser(user);
+      session.step = 'goal';
+      await ctx.answerCbQuery();
+      await ctx.editMessageText(`✅ ${user.lang === 'ru' ? 'Нет ограничений' : 'No restrictions'}`);
+      await ctx.reply(t(user, 'goal_q'), { reply_markup: { inline_keyboard: [
+        [{ text: t(user, 'goal_energy'), callback_data: 'goal_energy' }],
+        [{ text: t(user, 'goal_longevity'), callback_data: 'goal_longevity' }],
+        [{ text: t(user, 'goal_weight'), callback_data: 'goal_weight' }],
+        [{ text: t(user, 'goal_general'), callback_data: 'goal_general' }]
+      ]}});
+      return;
+    }
+    if (data === 'diet_done') {
+      user.diet_restrictions = session.dietSelections.join(', ') || '';
+      DB.updateUser(user);
+      session.step = 'goal';
+      await ctx.answerCbQuery();
+      await ctx.editMessageText(`✅ ${user.diet_restrictions || (user.lang === 'ru' ? 'Нет ограничений' : 'No restrictions')}`);
+      await ctx.reply(t(user, 'goal_q'), { reply_markup: { inline_keyboard: [
+        [{ text: t(user, 'goal_energy'), callback_data: 'goal_energy' }],
+        [{ text: t(user, 'goal_longevity'), callback_data: 'goal_longevity' }],
+        [{ text: t(user, 'goal_weight'), callback_data: 'goal_weight' }],
+        [{ text: t(user, 'goal_general'), callback_data: 'goal_general' }]
+      ]}});
+      return;
+    }
+    // Toggle selection
+    const dietLabels = { diet_vegetarian: 'Vegetarian', diet_vegan: 'Vegan', diet_gf: 'Gluten-free', diet_lf: 'Lactose-free', diet_halal: 'Halal', diet_keto: 'Keto' };
+    const label = dietLabels[data];
+    if (label) {
+      const idx = session.dietSelections.indexOf(label);
+      if (idx >= 0) session.dietSelections.splice(idx, 1);
+      else session.dietSelections.push(label);
+      await ctx.answerCbQuery(`${idx >= 0 ? '❌' : '✅'} ${label}`);
+    }
+    return;
+  }
+
+  if (data === 'meal_reroll') {
+    if (!canUse(user, 'chat')) { await ctx.replyWithMarkdown(UPGRADE_MSG); return; }
+    user.chat_count++; DB.updateUser(user);
+    DB.logEvent(ctx.from.id, 'MEAL_REROLL', '');
+    await ctx.answerCbQuery();
+    await ctx.reply(t(user, 'meal_plan_gen'));
+    const prompt = user.is_pro ? MEAL_PLAN_PROMPT_PRO : MEAL_PLAN_PROMPT_1DAY;
+    const maxTok = user.is_pro ? 8000 : 3000;
+    try {
+      const r = await openai.chat.completions.create({
+        model: 'gpt-4o', max_tokens: maxTok,
+        messages: [{ role: 'system', content: prompt }, { role: 'user', content: `Generate a DIFFERENT meal plan from the previous one. Use different dishes and cuisines.${profileContext(user)}` }]
+      });
+      await sendLong(ctx, r.choices[0].message.content);
+      const ru = user.lang === 'ru';
+      await ctx.reply(ru ? '👇 Хотите другой вариант?' : '👇 Want a different plan?', { reply_markup: { inline_keyboard: [
+        [{ text: ru ? '🔄 Другой вариант' : '🔄 Another plan', callback_data: 'meal_reroll' }]
+      ]}});
+    } catch (e) { await ctx.reply('❌ Error. Try again.'); }
     return;
   }
 
@@ -771,12 +919,18 @@ bot.on('text', async (ctx) => {
     user.chat_count++; DB.updateUser(user);
     DB.logEvent(ctx.from.id, 'MEAL_PLAN', '');
     await ctx.reply(t(user, 'meal_plan_gen'));
+    const prompt = user.is_pro ? MEAL_PLAN_PROMPT_PRO : MEAL_PLAN_PROMPT_1DAY;
+    const maxTok = user.is_pro ? 8000 : 3000;
     try {
       const r = await openai.chat.completions.create({
-        model: 'gpt-4o', max_tokens: 3000,
-        messages: [{ role: 'system', content: MEAL_PLAN_PROMPT }, { role: 'user', content: `Meal plan.${profileContext(user)}` }]
+        model: 'gpt-4o', max_tokens: maxTok,
+        messages: [{ role: 'system', content: prompt }, { role: 'user', content: `Meal plan.${profileContext(user)}` }]
       });
       await sendLong(ctx, r.choices[0].message.content);
+      const ru = user.lang === 'ru';
+      await ctx.reply(ru ? '👇 Хотите другой вариант?' : '👇 Want a different plan?', { reply_markup: { inline_keyboard: [
+        [{ text: ru ? '🔄 Другой вариант' : '🔄 Another plan', callback_data: 'meal_reroll' }]
+      ]}});
     } catch (e) { await ctx.reply('❌ Error. Try again.'); }
     return;
   }
@@ -839,6 +993,7 @@ bot.on('text', async (ctx) => {
       `${ru ? 'Рост' : 'Height'}: ${user.height ? user.height + (ru ? ' см' : ' cm') : (ru ? 'Не указан' : 'Not set')}`,
       `${ru ? 'Вес' : 'Weight'}: ${user.weight ? user.weight + (ru ? ' кг' : ' kg') : (ru ? 'Не указан' : 'Not set')}`,
       `${ru ? 'Активность' : 'Activity'}: ${user.activity_level || (ru ? 'Не указана' : 'Not set')}`,
+      `${ru ? 'Ограничения' : 'Diet'}: ${user.diet_restrictions || (ru ? 'Нет' : 'None')}`,
       `${ru ? 'Цель' : 'Goal'}: ${user.goal || (ru ? 'Не указана' : 'Not set')}`,
       `\n📊 *${ru ? 'Использование' : 'Usage'}*`,
       `${ru ? 'Анализы' : 'Analyses'}: ${user.analysis_count}/${user.is_pro ? '∞' : FREE_ANALYSIS_LIMIT}`,

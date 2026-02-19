@@ -17,6 +17,7 @@ db.exec(`
     height INTEGER,
     weight REAL,
     activity_level TEXT,
+    diet_restrictions TEXT,
     pregnancy_status TEXT,
     goal TEXT,
     is_pro INTEGER DEFAULT 0,
@@ -49,6 +50,7 @@ db.exec(`
 try { db.exec('ALTER TABLE users ADD COLUMN height INTEGER'); } catch(e) {}
 try { db.exec('ALTER TABLE users ADD COLUMN weight REAL'); } catch(e) {}
 try { db.exec('ALTER TABLE users ADD COLUMN activity_level TEXT'); } catch(e) {}
+try { db.exec('ALTER TABLE users ADD COLUMN diet_restrictions TEXT'); } catch(e) {}
 
 // Prepared statements
 const getUser = db.prepare('SELECT * FROM users WHERE id = ?');
@@ -57,7 +59,7 @@ const insertUser = db.prepare(`
   VALUES (?, ?, ?, datetime('now'), datetime('now'))
 `);
 const updateUser = db.prepare(`
-  UPDATE users SET gender=?, age=?, height=?, weight=?, activity_level=?, pregnancy_status=?, goal=?, is_pro=?,
+  UPDATE users SET gender=?, age=?, height=?, weight=?, activity_level=?, diet_restrictions=?, pregnancy_status=?, goal=?, is_pro=?,
   tz_offset=?, lang=?, analysis_count=?, chat_count=?, last_active=datetime('now') WHERE id=?
 `);
 const insertSymptom = db.prepare('INSERT INTO symptoms (user_id, text) VALUES (?, ?)');
@@ -80,8 +82,8 @@ module.exports = {
   },
   updateUser: (user) => {
     updateUser.run(user.gender, user.age, user.height || null, user.weight || null, user.activity_level || null,
-      user.pregnancy_status, user.goal, user.is_pro ? 1 : 0, user.tz_offset || 0, user.lang || 'en',
-      user.analysis_count, user.chat_count, user.id);
+      user.diet_restrictions || null, user.pregnancy_status, user.goal, user.is_pro ? 1 : 0, user.tz_offset || 0,
+      user.lang || 'en', user.analysis_count, user.chat_count, user.id);
   },
   addSymptom: (userId, text) => insertSymptom.run(userId, text),
   getSymptoms: (userId) => getSymptoms.all(userId),
