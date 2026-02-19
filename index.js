@@ -260,6 +260,8 @@ function profileContext(user) {
   let s = `\nPatient: ${user.gender || '?'}, ${user.age || '?'} years`;
   if (user.pregnancy_status && user.pregnancy_status !== 'not pregnant') s += `, ${user.pregnancy_status}`;
   if (user.goal) s += `. Goal: ${user.goal}`;
+  const lang = user.lang === 'ru' ? 'Russian' : 'English';
+  s += `.\nIMPORTANT: You MUST respond ONLY in ${lang}. Do not use any other language.`;
   return s + '.';
 }
 
