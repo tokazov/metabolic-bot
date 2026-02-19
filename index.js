@@ -29,8 +29,13 @@ function startReminderLoop() {
     for (const [userId, userReminders] of Object.entries(reminders)) {
       for (const r of userReminders) {
         if (r.active && r.utcTime === hhmm && !r.sentToday) {
+          const rUser = DB.getUser(parseInt(userId));
+          const ru = rUser?.lang === 'ru';
+          const mealRu = { Breakfast: 'Завтрак', Lunch: 'Обед', Dinner: 'Ужин', Snack: 'Перекус' };
+          const mealName = ru ? (mealRu[r.meal] || r.meal) : r.meal;
+          const footer = ru ? '_Приятного аппетита! Отправьте фото еды — я её проанализирую._' : '_Bon appétit! Reply with a food photo and I\'ll scan it._';
           bot.telegram.sendMessage(userId, 
-            `⏰ *Meal Reminder: ${r.meal}*\n\n${r.text}\n\n_Bon appétit! Reply with a food photo and I'll scan it._`,
+            `⏰ *${ru ? 'Напоминание' : 'Meal Reminder'}: ${mealName}*\n\n${r.text}\n\n${footer}`,
             { parse_mode: 'Markdown' }
           ).catch(console.error);
           r.sentToday = true;
@@ -281,13 +286,38 @@ function canUse(user, type) {
 }
 
 // ─── Menu ───
-const MAIN_MENU = Markup.keyboard([
+const MENU_EN = [
   ['🔬 Analyze Blood Test', '📸 Scan Food'],
   ['🥗 Meal Plan', '💊 Supplement Protocol'],
   ['📋 Track Symptoms', '📄 Interpret Document'],
   ['⏰ Meal Reminders', '💬 Health Chat'],
   ['👤 My Profile', '⭐ Upgrade to Pro']
-]).resize();
+];
+const MENU_RU = [
+  ['🔬 Анализ крови', '📸 Сканер еды'],
+  ['🥗 План питания', '💊 Протокол добавок'],
+  ['📋 Симптомы', '📄 Расшифровка документа'],
+  ['⏰ Напоминания', '💬 Чат со здоровьем'],
+  ['👤 Мой профиль', '⭐ Pro подписка']
+];
+const MAIN_MENU = Markup.keyboard(MENU_EN).resize();
+function getMenu(user) {
+  const rows = (user?.lang === 'ru') ? MENU_RU : MENU_EN;
+  return Markup.keyboard(rows).resize();
+}
+// Map Russian menu buttons to English equivalents for handler matching
+const RU_TO_CMD = {
+  '🔬 Анализ крови': '🔬 Analyze Blood Test',
+  '📸 Сканер еды': '📸 Scan Food',
+  '🥗 План питания': '🥗 Meal Plan',
+  '💊 Протокол добавок': '💊 Supplement Protocol',
+  '📋 Симптомы': '📋 Track Symptoms',
+  '📄 Расшифровка документа': '📄 Interpret Document',
+  '⏰ Напоминания': '⏰ Meal Reminders',
+  '💬 Чат со здоровьем': '💬 Health Chat',
+  '👤 Мой профиль': '👤 My Profile',
+  '⭐ Pro подписка': '⭐ Upgrade to Pro'
+};
 
 const WELCOME = `🧬 *Welcome to Metabolic Center*
 
@@ -316,7 +346,7 @@ bot.start(async (ctx) => {
     user.lang = 'ru';
     DB.updateUser(user);
     session.step = 'gender';
-    await ctx.replyWithMarkdown(t(user, 'welcome'), MAIN_MENU);
+    await ctx.replyWithMarkdown(t(user, 'welcome'), getMenu(user));
     setTimeout(() => {
       ctx.reply(t(user, 'sex_q'), { reply_markup: { inline_keyboard: [
         [{ text: t(user, 'male'), callback_data: 'gender_male' }, { text: t(user, 'female'), callback_data: 'gender_female' }]
@@ -406,7 +436,7 @@ bot.on('callback_query', async (ctx) => {
     session.step = 'gender';
     await ctx.answerCbQuery();
     await ctx.editMessageText(`✅ ${user.lang === 'ru' ? 'Русский' : 'English'}`);
-    await ctx.replyWithMarkdown(t(user, 'welcome'), MAIN_MENU);
+    await ctx.replyWithMarkdown(t(user, 'welcome'), getMenu(user));
     setTimeout(() => {
       ctx.reply(t(user, 'sex_q'), { reply_markup: { inline_keyboard: [
         [{ text: t(user, 'male'), callback_data: 'gender_male' }, { text: t(user, 'female'), callback_data: 'gender_female' }]
@@ -513,7 +543,8 @@ bot.on('callback_query', async (ctx) => {
     DB.logEvent(ctx.from.id, 'REMINDERS_SET', data);
     await ctx.answerCbQuery();
     const schedule = meals.map(m => `⏰ ${m.localTime} — ${m.meal}`).join('\n');
-    await ctx.editMessageText(`✅ *Schedule set!*\n\n${schedule}\n\nI'll send you a reminder with meal suggestions before each one!`, { parse_mode: 'Markdown' });
+    const ru = user.lang === 'ru';
+    await ctx.editMessageText(`✅ *${ru ? 'Расписание установлено!' : 'Schedule set!'}*\n\n${schedule}\n\n${ru ? 'Я буду напоминать о каждом приёме пищи!' : 'I\'ll send you a reminder with meal suggestions before each one!'}`, { parse_mode: 'Markdown' });
     return;
   }
 
@@ -524,7 +555,7 @@ bot.on('callback_query', async (ctx) => {
     session.step = 'ready';
     await ctx.answerCbQuery();
     await ctx.editMessageText(`✅ ${user.goal}`);
-    await ctx.reply(t(user, 'profile_done'), MAIN_MENU);
+    await ctx.reply(t(user, 'profile_done'), getMenu(user));
   }
 });
 
@@ -611,7 +642,8 @@ bot.on('document', async (ctx) => {
 bot.on('text', async (ctx) => {
   const user = DB.ensureUser(ctx.from.id, ctx.from.username, ctx.from.first_name);
   const session = getSession(ctx.from.id);
-  const text = ctx.message.text.trim();
+  const rawText = ctx.message.text.trim();
+  const text = RU_TO_CMD[rawText] || rawText;
 
   // Onboarding: age
   if (session.step === 'age') {
@@ -698,16 +730,18 @@ bot.on('text', async (ctx) => {
     return;
   }
   if (text === '⏰ Meal Reminders') {
+    const ru = user.lang === 'ru';
     // Check if already has reminders
     if (reminders[ctx.from.id] && reminders[ctx.from.id].length > 0) {
       const r = reminders[ctx.from.id];
-      const schedule = r.map(m => `⏰ ${m.localTime} — ${m.meal}`).join('\n');
-      await ctx.reply(`🍽 *Your reminders:*\n\n${schedule}`, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [
-        [{ text: '🔄 Change schedule', callback_data: 'remind_setup' }],
-        [{ text: '❌ Turn off reminders', callback_data: 'remind_off' }]
+      const mealRu = { Breakfast: 'Завтрак', Lunch: 'Обед', Dinner: 'Ужин', Snack: 'Перекус' };
+      const schedule = r.map(m => `⏰ ${m.localTime} — ${ru ? (mealRu[m.meal] || m.meal) : m.meal}`).join('\n');
+      await ctx.reply(`🍽 *${ru ? 'Ваши напоминания' : 'Your reminders'}:*\n\n${schedule}`, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [
+        [{ text: ru ? '🔄 Изменить расписание' : '🔄 Change schedule', callback_data: 'remind_setup' }],
+        [{ text: ru ? '❌ Отключить напоминания' : '❌ Turn off reminders', callback_data: 'remind_off' }]
       ]}});
     } else {
-      await ctx.reply('⏰ *Meal Reminders*\n\nI\'ll remind you when to eat and what to eat.\n\nChoose your timezone:', { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [
+      await ctx.reply(`⏰ *${ru ? 'Напоминания о еде' : 'Meal Reminders'}*\n\n${ru ? 'Я напомню когда и что поесть.\n\nВыберите часовой пояс:' : 'I\'ll remind you when to eat and what to eat.\n\nChoose your timezone:'}`, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [
         [{ text: '🇬🇪 Tbilisi +4', callback_data: 'tz_4' }, { text: '🇦🇪 Dubai +4', callback_data: 'tz_4' }],
         [{ text: '🇹🇷 Istanbul +3', callback_data: 'tz_3' }, { text: '🇪🇺 Berlin +1', callback_data: 'tz_1' }],
         [{ text: '🇬🇧 London 0', callback_data: 'tz_0' }, { text: '🇺🇸 NY -5', callback_data: 'tz_-5' }],
@@ -731,16 +765,17 @@ bot.on('text', async (ctx) => {
     return;
   }
   if (text === '👤 My Profile') {
+    const ru = user.lang === 'ru';
     await ctx.replyWithMarkdown([
-      `👤 *Your Profile*`,
-      `Sex: ${user.gender || 'Not set'}`,
-      user.pregnancy_status && user.pregnancy_status !== 'not pregnant' ? `Status: ${user.pregnancy_status}` : null,
-      `Age: ${user.age || 'Not set'}`,
-      `Goal: ${user.goal || 'Not set'}`,
-      `\n📊 *Usage*`,
-      `Analyses: ${user.analysis_count}/${user.is_pro ? '∞' : FREE_ANALYSIS_LIMIT}`,
-      `Chats: ${user.chat_count}/${user.is_pro ? '∞' : FREE_CHAT_LIMIT}`,
-      `\n${user.is_pro ? '⭐ *Pro Member*' : `[Upgrade to Pro](${CHECKOUT_URL})`}`
+      `👤 *${ru ? 'Ваш профиль' : 'Your Profile'}*`,
+      `${ru ? 'Пол' : 'Sex'}: ${user.gender || (ru ? 'Не указан' : 'Not set')}`,
+      user.pregnancy_status && user.pregnancy_status !== 'not pregnant' ? `${ru ? 'Статус' : 'Status'}: ${user.pregnancy_status}` : null,
+      `${ru ? 'Возраст' : 'Age'}: ${user.age || (ru ? 'Не указан' : 'Not set')}`,
+      `${ru ? 'Цель' : 'Goal'}: ${user.goal || (ru ? 'Не указана' : 'Not set')}`,
+      `\n📊 *${ru ? 'Использование' : 'Usage'}*`,
+      `${ru ? 'Анализы' : 'Analyses'}: ${user.analysis_count}/${user.is_pro ? '∞' : FREE_ANALYSIS_LIMIT}`,
+      `${ru ? 'Чаты' : 'Chats'}: ${user.chat_count}/${user.is_pro ? '∞' : FREE_CHAT_LIMIT}`,
+      `\n${user.is_pro ? `⭐ *${ru ? 'Pro участник' : 'Pro Member'}*` : `[${ru ? 'Перейти на Pro' : 'Upgrade to Pro'}](${CHECKOUT_URL})`}`
     ].filter(Boolean).join('\n'));
     return;
   }
