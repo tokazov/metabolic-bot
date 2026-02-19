@@ -206,17 +206,17 @@ Estimated Bio Age: XX years (Chrono: XX)
 Use sex-specific and age-specific optimal ranges when patient profile is provided.
 If pregnant/breastfeeding, use pregnancy-adjusted reference ranges.
 If image is NOT a blood test, explain and ask for lab results.
-Respond in user's language. Default English.
+Do not respond in Spanish or any other language unless explicitly told.
 End with disclaimer: "AI-generated analysis. Not medical advice. Consult your healthcare provider."`;
 
 const CHAT_PROMPT = `You are the Metabolic Center AI — a premium health intelligence assistant.
 You help with: metabolic health, nutrition, supplements, sleep, exercise, biomarkers, longevity.
-Be concise, evidence-based, actionable. Respond in user's language.
+Be concise, evidence-based, actionable. Do not respond in Spanish or any other language unless explicitly told.
 End health advice with: "This is AI-generated guidance, not medical advice."`;
 
 const MEAL_PLAN_PROMPT = `You are a precision nutrition AI for Metabolic Center.
 Generate a detailed personalized meal plan. Include: daily calories, macros, breakfast/lunch/dinner/snacks with portions, meal timing, foods to avoid, hydration, weekly shopping list.
-Tailor to goal and profile. Respond in user's language.`;
+Tailor to goal and profile. Do not respond in Spanish or any other language unless explicitly told.`;
 
 const SUPPLEMENT_PROMPT = `You are a supplement protocol AI for Metabolic Center.
 Create personalized evidence-based supplement protocol. Include: exact dosages, timing, morning vs evening stack, with food vs empty stomach, best forms, interactions, expected timeline.
@@ -250,7 +250,7 @@ When a user sends a photo of food/meal:
 
 Format the response clearly with emojis. Be encouraging but honest.
 At the end, add: "💡 Not accurate? Reply with the correct dish name and I'll recalculate."
-Respond in user's language. Default English.`;
+Do not respond in Spanish or any other language unless explicitly told.`;
 
 const DOC_PROMPT = `You are a medical document interpreter for Metabolic Center.
 Explain findings in simple language, highlight abnormalities, connect to metabolic health.
@@ -275,15 +275,15 @@ async function getImageBase64(ctx, fileId) {
 }
 
 function profileContext(user) {
-  if (!user || (!user.gender && !user.age)) return '';
-  let s = `\nPatient: ${user.gender || '?'}, ${user.age || '?'} years`;
+  const lang = (user?.lang === 'ru') ? 'Russian' : 'English';
+  let s = `\nIMPORTANT: You MUST respond ONLY in ${lang}. Do not use any other language.`;
+  if (!user || (!user.gender && !user.age)) return s;
+  s += `\nPatient: ${user.gender || '?'}, ${user.age || '?'} years`;
   if (user.height) s += `, ${user.height} cm`;
   if (user.weight) s += `, ${user.weight} kg`;
   if (user.activity_level) s += `, activity: ${user.activity_level}`;
   if (user.pregnancy_status && user.pregnancy_status !== 'not pregnant') s += `, ${user.pregnancy_status}`;
   if (user.goal) s += `. Goal: ${user.goal}`;
-  const lang = user.lang === 'ru' ? 'Russian' : 'English';
-  s += `.\nIMPORTANT: You MUST respond ONLY in ${lang}. Do not use any other language.`;
   return s + '.';
 }
 
