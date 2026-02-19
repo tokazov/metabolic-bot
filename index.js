@@ -241,7 +241,9 @@ FORMATTING RULES (always follow):
   Then each meal with emoji, time, calories, portions in grams
 - Make responses look premium and polished — you are a $19/mo service
 
-End health advice with: "This is AI-generated guidance, not medical advice."`;
+End health advice with: "This is AI-generated guidance, not medical advice."
+
+`;
 
 const MEAL_PLAN_PROMPT_1DAY = `You are a precision nutrition AI for Metabolic Center.
 Generate a detailed 1-DAY personalized meal plan.
@@ -1030,7 +1032,7 @@ bot.on('text', async (ctx) => {
     if (session.history.length > 6) session.history = session.history.slice(-6);
     const r = await openai.chat.completions.create({
       model: 'gpt-4o', max_tokens: 1500,
-      messages: [{ role: 'system', content: CHAT_PROMPT + profileContext(user) }, ...session.history]
+      messages: [{ role: 'system', content: CHAT_PROMPT + (user.is_pro ? '' : '\nUser is on FREE plan. Limit meal/diet plans to 1 day only. Always end meal plans with: "🔒 *Full 7-day plan + shopping list → Pro*"') + profileContext(user) }, ...session.history]
     });
     const reply = r.choices[0].message.content;
     session.history.push({ role: 'assistant', content: reply });
