@@ -43,7 +43,99 @@ function startReminderLoop() {
 }
 
 
-// In-memory session state (not persisted — onboarding step, awaiting flags, chat history)
+// ─── Translations ───
+const i18n = {
+  en: {
+    welcome: `🧬 *Welcome to Metabolic Center*\n\nYour AI Metabolic Intelligence assistant.\n\n🔬 *Analyze Blood Tests* — full metabolic report from a photo\n📸 *Scan Food* — photo your meal, get calories & metabolic score\n🥗 *Meal Plan* — personalized nutrition\n💊 *Supplement Protocol* — evidence-based stack\n📋 *Track Symptoms* — detect patterns\n📄 *Interpret Documents* — explain any medical doc\n💬 *Health Chat* — ask anything\n\n📸 *2 free analyses + 10 free chats to start!*`,
+    choose_lang: '🌐 Choose your language:',
+    sex_q: 'Let me set up your profile.\n\n👤 Biological sex?',
+    male: '♂️ Male', female: '♀️ Female',
+    pregnant_q: '🤰 Are you pregnant or breastfeeding?',
+    preg_yes: '🤰 Pregnant', preg_bf: '🤱 Breastfeeding', preg_no: '❌ No',
+    age_q: '📅 Your age? (type a number)',
+    goal_q: '🎯 Primary goal?',
+    goal_energy: '⚡ Energy & Performance', goal_longevity: '🧬 Longevity', goal_weight: '⚖️ Weight', goal_general: '💚 General Health',
+    profile_done: '✅ Profile complete! Use the menu below 👇',
+    analyzing: '🔬 Analyzing... (30-60 sec)',
+    scanning_food: '📸 Scanning your meal...',
+    interpreting: '📄 Interpreting...',
+    send_blood: '📸 Send a photo of your blood test results.',
+    send_food: '📸 Send a photo of your meal.',
+    send_doc: '📄 Send a photo of your medical document.',
+    meal_plan_gen: '🥗 Generating meal plan...',
+    supplement_gen: '💊 Building protocol...',
+    symptom_q: '📋 Describe your symptoms:',
+    symptom_analyzing: '🔍 Analyzing symptoms...',
+    chat_ask: '💬 Ask me anything about health!',
+    free_remaining: (n, t) => `📊 Free analyses remaining: ${n}/${t}`,
+    last_free: 'That was your last free analysis.',
+    upgrade_btn: '⭐ Upgrade to Pro',
+    error: '❌ Error. Try again.',
+    remind_tz: '⏰ *Meal Reminders*\n\nChoose your timezone:',
+    remind_schedule: 'Choose your eating schedule:',
+    remind_early: '🌅 Early Bird (7-12-15-18)',
+    remind_standard: '☀️ Standard (8-13-16-19)',
+    remind_late: '🌙 Late Riser (10-14-17-21)',
+    remind_if: '🔥 IF 16:8 (12-15-19)',
+    remind_set: '✅ *Schedule set!*',
+    remind_off: '⏰ Reminders turned off.',
+    remind_change: '🔄 Change schedule',
+    remind_turn_off: '❌ Turn off reminders',
+    breakfast_tip: 'Protein smoothie, eggs, or oatmeal with fruits.',
+    lunch_tip: 'Balanced plate: protein + veggies + healthy carbs.',
+    snack_tip: 'Handful of nuts, fruit, or protein bar.',
+    dinner_tip: 'Lean protein + vegetables. Finish eating 3h before sleep.',
+  },
+  ru: {
+    welcome: `🧬 *Добро пожаловать в Metabolic Center*\n\nВаш AI-ассистент метаболического здоровья.\n\n🔬 *Анализ крови* — полный отчёт по фото\n📸 *Сканер еды* — фото блюда → калории и оценка\n🥗 *План питания* — персональное меню\n💊 *Протокол добавок* — подбор добавок\n📋 *Трекер симптомов* — отслеживание паттернов\n📄 *Расшифровка документов* — объяснение мед. документов\n💬 *Чат о здоровье* — любые вопросы\n\n📸 *2 бесплатных анализа + 10 чатов!*`,
+    choose_lang: '🌐 Выберите язык:',
+    sex_q: 'Настроим ваш профиль.\n\n👤 Ваш пол?',
+    male: '♂️ Мужской', female: '♀️ Женский',
+    pregnant_q: '🤰 Вы беременны или кормите грудью?',
+    preg_yes: '🤰 Беременна', preg_bf: '🤱 Кормлю грудью', preg_no: '❌ Нет',
+    age_q: '📅 Ваш возраст? (введите число)',
+    goal_q: '🎯 Главная цель?',
+    goal_energy: '⚡ Энергия', goal_longevity: '🧬 Долголетие', goal_weight: '⚖️ Вес', goal_general: '💚 Общее здоровье',
+    profile_done: '✅ Профиль готов! Используйте меню 👇',
+    analyzing: '🔬 Анализирую... (30-60 сек)',
+    scanning_food: '📸 Сканирую блюдо...',
+    interpreting: '📄 Расшифровываю...',
+    send_blood: '📸 Отправьте фото анализа крови.',
+    send_food: '📸 Отправьте фото вашего блюда.',
+    send_doc: '📄 Отправьте фото медицинского документа.',
+    meal_plan_gen: '🥗 Составляю план питания...',
+    supplement_gen: '💊 Подбираю добавки...',
+    symptom_q: '📋 Опишите симптомы:',
+    symptom_analyzing: '🔍 Анализирую симптомы...',
+    chat_ask: '💬 Спрашивайте что угодно о здоровье!',
+    free_remaining: (n, t) => `📊 Осталось бесплатных анализов: ${n}/${t}`,
+    last_free: 'Это был последний бесплатный анализ.',
+    upgrade_btn: '⭐ Перейти на Pro',
+    error: '❌ Ошибка. Попробуйте снова.',
+    remind_tz: '⏰ *Напоминания о еде*\n\nВыберите часовой пояс:',
+    remind_schedule: 'Выберите расписание:',
+    remind_early: '🌅 Ранний (7-12-15-18)',
+    remind_standard: '☀️ Обычный (8-13-16-19)',
+    remind_late: '🌙 Поздний (10-14-17-21)',
+    remind_if: '🔥 ИП 16:8 (12-15-19)',
+    remind_set: '✅ *Расписание установлено!*',
+    remind_off: '⏰ Напоминания отключены.',
+    remind_change: '🔄 Изменить расписание',
+    remind_turn_off: '❌ Отключить напоминания',
+    breakfast_tip: 'Белковый завтрак: яйца, каша с ягодами, или смузи.',
+    lunch_tip: 'Сбалансированный обед: белок + овощи + сложные углеводы.',
+    snack_tip: 'Перекус: орехи, фрукты или йогурт.',
+    dinner_tip: 'Лёгкий ужин: белок + овощи. Не позже чем за 3ч до сна.',
+  }
+};
+
+function t(user, key, ...args) {
+  const lang = user?.lang || 'en';
+  const val = i18n[lang]?.[key] || i18n.en[key] || key;
+  return typeof val === 'function' ? val(...args) : val;
+}
+
+// In-memory session state
 const sessions = {};
 function getSession(id) {
   if (!sessions[id]) sessions[id] = { step: null, history: [], awaitingImage: null, awaitingSymptoms: false };
@@ -213,14 +305,27 @@ Your AI Metabolic Intelligence assistant.
 bot.start(async (ctx) => {
   const user = DB.ensureUser(ctx.from.id, ctx.from.username, ctx.from.first_name);
   const session = getSession(ctx.from.id);
-  session.step = 'gender';
+  session.step = 'lang';
   DB.logEvent(ctx.from.id, 'START', `@${ctx.from.username || ''} ${ctx.from.first_name || ''}`);
-  await ctx.replyWithMarkdown(WELCOME, MAIN_MENU);
-  setTimeout(() => {
-    ctx.reply('Let me set up your profile.\n\n👤 Biological sex?', { reply_markup: { inline_keyboard: [
-      [{ text: '♂️ Male', callback_data: 'gender_male' }, { text: '♀️ Female', callback_data: 'gender_female' }]
+  
+  // Auto-detect language from Telegram
+  const tgLang = ctx.from.language_code || '';
+  if (tgLang.startsWith('ru')) {
+    user.lang = 'ru';
+    DB.updateUser(user);
+    session.step = 'gender';
+    await ctx.replyWithMarkdown(t(user, 'welcome'), MAIN_MENU);
+    setTimeout(() => {
+      ctx.reply(t(user, 'sex_q'), { reply_markup: { inline_keyboard: [
+        [{ text: t(user, 'male'), callback_data: 'gender_male' }, { text: t(user, 'female'), callback_data: 'gender_female' }]
+      ]}});
+    }, 1000);
+  } else {
+    await ctx.reply('🌐 Choose your language:', { reply_markup: { inline_keyboard: [
+      [{ text: '🇺🇸 English', callback_data: 'lang_en' }],
+      [{ text: '🇷🇺 Русский', callback_data: 'lang_ru' }]
     ]}});
-  }, 1000);
+  }
 });
 
 // Admin: activate Pro for user
@@ -292,21 +397,37 @@ bot.on('callback_query', async (ctx) => {
   const session = getSession(ctx.from.id);
   const data = ctx.callbackQuery.data;
 
+  if (data.startsWith('lang_')) {
+    user.lang = data.replace('lang_', '');
+    DB.updateUser(user);
+    const session = getSession(ctx.from.id);
+    session.step = 'gender';
+    await ctx.answerCbQuery();
+    await ctx.editMessageText(`✅ ${user.lang === 'ru' ? 'Русский' : 'English'}`);
+    await ctx.replyWithMarkdown(t(user, 'welcome'), MAIN_MENU);
+    setTimeout(() => {
+      ctx.reply(t(user, 'sex_q'), { reply_markup: { inline_keyboard: [
+        [{ text: t(user, 'male'), callback_data: 'gender_male' }, { text: t(user, 'female'), callback_data: 'gender_female' }]
+      ]}});
+    }, 1000);
+    return;
+  }
+
   if (data === 'gender_male' || data === 'gender_female') {
     user.gender = data === 'gender_male' ? 'male' : 'female';
     DB.updateUser(user);
     await ctx.answerCbQuery();
-    await ctx.editMessageText(`✅ Sex: ${user.gender === 'male' ? 'Male' : 'Female'}`);
+    await ctx.editMessageText(`✅ ${user.gender === 'male' ? t(user, 'male') : t(user, 'female')}`);
     if (user.gender === 'female') {
       session.step = 'pregnant';
-      await ctx.reply('🤰 Are you pregnant or breastfeeding?', { reply_markup: { inline_keyboard: [
-        [{ text: '🤰 Pregnant', callback_data: 'preg_yes' }],
-        [{ text: '🤱 Breastfeeding', callback_data: 'preg_bf' }],
-        [{ text: '❌ No', callback_data: 'preg_no' }]
+      await ctx.reply(t(user, 'pregnant_q'), { reply_markup: { inline_keyboard: [
+        [{ text: t(user, 'preg_yes'), callback_data: 'preg_yes' }],
+        [{ text: t(user, 'preg_bf'), callback_data: 'preg_bf' }],
+        [{ text: t(user, 'preg_no'), callback_data: 'preg_no' }]
       ]}});
     } else {
       session.step = 'age';
-      await ctx.reply('📅 Your age? (type a number)');
+      await ctx.reply(t(user, 'age_q'));
     }
   }
 
@@ -315,8 +436,8 @@ bot.on('callback_query', async (ctx) => {
     DB.updateUser(user);
     session.step = 'age';
     await ctx.answerCbQuery();
-    await ctx.editMessageText(`✅ ${user.pregnancy_status === 'not pregnant' ? 'Not pregnant' : user.pregnancy_status}`);
-    await ctx.reply('📅 Your age? (type a number)');
+    await ctx.editMessageText(`✅ ${user.pregnancy_status === 'not pregnant' ? t(user, 'preg_no') : user.pregnancy_status === 'pregnant' ? t(user, 'preg_yes') : t(user, 'preg_bf')}`);
+    await ctx.reply(t(user, 'age_q'));
   }
 
   if (data.startsWith('tz_')) {
@@ -400,8 +521,8 @@ bot.on('callback_query', async (ctx) => {
     DB.updateUser(user);
     session.step = 'ready';
     await ctx.answerCbQuery();
-    await ctx.editMessageText(`✅ Goal: ${user.goal}`);
-    await ctx.reply('✅ Profile complete! Use the menu below 👇', MAIN_MENU);
+    await ctx.editMessageText(`✅ ${user.goal}`);
+    await ctx.reply(t(user, 'profile_done'), MAIN_MENU);
   }
 });
 
@@ -417,8 +538,8 @@ bot.on('photo', async (ctx) => {
   const prompts = { document: DOC_PROMPT, food: FOOD_PROMPT, analysis: ANALYSIS_PROMPT };
   const prompt = prompts[mode] || ANALYSIS_PROMPT;
 
-  const labels = { document: '📄 Interpreting...', food: '📸 Scanning your meal...', analysis: '🔬 Analyzing... (30-60 sec)' };
-  await ctx.reply(labels[mode] || '🔬 Analyzing...');
+  const labelKeys = { document: 'interpreting', food: 'scanning_food', analysis: 'analyzing' };
+  await ctx.reply(t(user, labelKeys[mode] || 'analyzing'));
 
   try {
     const photos = ctx.message.photo;
@@ -497,11 +618,11 @@ bot.on('text', async (ctx) => {
       user.age = age;
       DB.updateUser(user);
       session.step = 'goal';
-      await ctx.reply(`✅ Age: ${age}\n\n🎯 Primary goal?`, { reply_markup: { inline_keyboard: [
-        [{ text: '⚡ Energy & Performance', callback_data: 'goal_energy' }],
-        [{ text: '🧬 Longevity & Anti-aging', callback_data: 'goal_longevity' }],
-        [{ text: '⚖️ Weight Optimization', callback_data: 'goal_weight' }],
-        [{ text: '💚 General Health', callback_data: 'goal_general' }]
+      await ctx.reply(`✅ ${age}\n\n${t(user, 'goal_q')}`, { reply_markup: { inline_keyboard: [
+        [{ text: t(user, 'goal_energy'), callback_data: 'goal_energy' }],
+        [{ text: t(user, 'goal_longevity'), callback_data: 'goal_longevity' }],
+        [{ text: t(user, 'goal_weight'), callback_data: 'goal_weight' }],
+        [{ text: t(user, 'goal_general'), callback_data: 'goal_general' }]
       ]}});
     } else {
       await ctx.reply('Enter valid age (1-119).');
@@ -538,19 +659,19 @@ bot.on('text', async (ctx) => {
   // ─── Menu ───
   if (text === '🔬 Analyze Blood Test') {
     session.awaitingImage = 'analysis';
-    await ctx.reply('📸 Send a photo of your blood test results.');
+    await ctx.reply(t(user, 'send_blood'));
     return;
   }
   if (text === '📸 Scan Food') {
     session.awaitingImage = 'food';
-    await ctx.reply('📸 Send a photo of your meal — I\'ll calculate calories, macros and metabolic impact.');
+    await ctx.reply(t(user, 'send_food'));
     return;
   }
   if (text === '🥗 Meal Plan') {
     if (!canUse(user, 'chat')) { await ctx.replyWithMarkdown(UPGRADE_MSG); return; }
     user.chat_count++; DB.updateUser(user);
     DB.logEvent(ctx.from.id, 'MEAL_PLAN', '');
-    await ctx.reply('🥗 Generating meal plan...');
+    await ctx.reply(t(user, 'meal_plan_gen'));
     try {
       const r = await openai.chat.completions.create({
         model: 'gpt-4o', max_tokens: 3000,
@@ -564,7 +685,7 @@ bot.on('text', async (ctx) => {
     if (!canUse(user, 'chat')) { await ctx.replyWithMarkdown(UPGRADE_MSG); return; }
     user.chat_count++; DB.updateUser(user);
     DB.logEvent(ctx.from.id, 'SUPPLEMENT', '');
-    await ctx.reply('💊 Building protocol...');
+    await ctx.reply(t(user, 'supplement_gen'));
     try {
       const r = await openai.chat.completions.create({
         model: 'gpt-4o', max_tokens: 3000,
@@ -595,16 +716,16 @@ bot.on('text', async (ctx) => {
   }
   if (text === '📋 Track Symptoms') {
     session.awaitingSymptoms = true;
-    await ctx.reply('📋 Describe your symptoms:');
+    await ctx.reply(t(user, 'symptom_q'));
     return;
   }
   if (text === '📄 Interpret Document') {
     session.awaitingImage = 'document';
-    await ctx.reply('📄 Send a photo of your medical document.');
+    await ctx.reply(t(user, 'send_doc'));
     return;
   }
   if (text === '💬 Health Chat') {
-    await ctx.reply('💬 Ask me anything about health!');
+    await ctx.reply(t(user, 'chat_ask'));
     return;
   }
   if (text === '👤 My Profile') {
