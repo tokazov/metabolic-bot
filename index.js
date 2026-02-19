@@ -88,6 +88,29 @@ const SYMPTOM_PROMPT = `You are a symptom analysis AI for Metabolic Center.
 Analyze symptoms: identify metabolic connections, suggest biomarkers to test, recommend lifestyle adjustments, flag urgent items, track patterns.
 End with: "This is not a diagnosis. See a doctor for persistent symptoms."`;
 
+const FOOD_PROMPT = `You are a food analysis AI for Metabolic Center.
+
+When a user sends a photo of food/meal:
+1. Identify all foods visible
+2. Estimate portion sizes
+3. Calculate approximate:
+   - Total calories
+   - Protein / Carbs / Fat (grams)
+   - Fiber, sugar estimate
+4. Rate the meal:
+   - Metabolic Score (0-10): how good is this for metabolic health
+   - Glucose Impact: Low/Medium/High (will it spike blood sugar?)
+   - Inflammation Score: Anti-inflammatory / Neutral / Pro-inflammatory
+5. Give specific feedback:
+   - ✅ What's good about this meal
+   - ⚠️ What could be better
+   - 🔄 Suggested swaps to improve it
+   - 🕐 Best time to eat this (morning/midday/evening)
+6. If user has a goal (weight loss, energy, longevity), tailor advice to that goal
+
+Format the response clearly with emojis. Be encouraging but honest.
+Respond in user's language. Default English.`;
+
 const DOC_PROMPT = `You are a medical document interpreter for Metabolic Center.
 Explain findings in simple language, highlight abnormalities, connect to metabolic health.
 End with: "AI interpretation. Discuss results with your doctor."`;
@@ -135,10 +158,11 @@ function canUse(user, type) {
 
 // ─── Menu ───
 const MAIN_MENU = Markup.keyboard([
-  ['🔬 Analyze Blood Test', '🥗 Meal Plan'],
-  ['💊 Supplement Protocol', '📋 Track Symptoms'],
-  ['📄 Interpret Document', '💬 Health Chat'],
-  ['👤 My Profile', '⭐ Upgrade to Pro']
+  ['🔬 Analyze Blood Test', '📸 Scan Food'],
+  ['🥗 Meal Plan', '💊 Supplement Protocol'],
+  ['📋 Track Symptoms', '📄 Interpret Document'],
+  ['💬 Health Chat', '👤 My Profile'],
+  ['⭐ Upgrade to Pro']
 ]).resize();
 
 const WELCOME = `🧬 *Welcome to Metabolic Center*
@@ -146,6 +170,7 @@ const WELCOME = `🧬 *Welcome to Metabolic Center*
 Your AI Metabolic Intelligence assistant.
 
 🔬 *Analyze Blood Tests* — full metabolic report from a photo
+📸 *Scan Food* — photo your meal, get calories & metabolic score
 🥗 *Meal Plan* — personalized nutrition
 💊 *Supplement Protocol* — evidence-based stack
 📋 *Track Symptoms* — detect patterns
@@ -241,9 +266,11 @@ bot.on('photo', async (ctx) => {
 
   const mode = session.awaitingImage || 'analysis';
   session.awaitingImage = null;
-  const prompt = mode === 'document' ? DOC_PROMPT : ANALYSIS_PROMPT;
+  const prompts = { document: DOC_PROMPT, food: FOOD_PROMPT, analysis: ANALYSIS_PROMPT };
+  const prompt = prompts[mode] || ANALYSIS_PROMPT;
 
-  await ctx.reply(mode === 'document' ? '📄 Interpreting...' : '🔬 Analyzing... (30-60 sec)');
+  const labels = { document: '📄 Interpreting...', food: '📸 Scanning your meal...', analysis: '🔬 Analyzing... (30-60 sec)' };
+  await ctx.reply(labels[mode] || '🔬 Analyzing...');
 
   try {
     const photos = ctx.message.photo;
@@ -362,7 +389,13 @@ bot.on('text', async (ctx) => {
 
   // ─── Menu ───
   if (text === '🔬 Analyze Blood Test') {
+    session.awaitingImage = 'analysis';
     await ctx.reply('📸 Send a photo of your blood test results.');
+    return;
+  }
+  if (text === '📸 Scan Food') {
+    session.awaitingImage = 'food';
+    await ctx.reply('📸 Send a photo of your meal — I\'ll calculate calories, macros and metabolic impact.');
     return;
   }
   if (text === '🥗 Meal Plan') {
