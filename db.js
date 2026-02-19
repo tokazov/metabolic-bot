@@ -17,6 +17,7 @@ db.exec(`
     pregnancy_status TEXT,
     goal TEXT,
     is_pro INTEGER DEFAULT 0,
+    tz_offset INTEGER DEFAULT 0,
     analysis_count INTEGER DEFAULT 0,
     chat_count INTEGER DEFAULT 0,
     joined_at TEXT DEFAULT (datetime('now')),
@@ -48,7 +49,7 @@ const insertUser = db.prepare(`
 `);
 const updateUser = db.prepare(`
   UPDATE users SET gender=?, age=?, pregnancy_status=?, goal=?, is_pro=?,
-  analysis_count=?, chat_count=?, last_active=datetime('now') WHERE id=?
+  tz_offset=?, analysis_count=?, chat_count=?, last_active=datetime('now') WHERE id=?
 `);
 const insertSymptom = db.prepare('INSERT INTO symptoms (user_id, text) VALUES (?, ?)');
 const getSymptoms = db.prepare('SELECT * FROM symptoms WHERE user_id = ? ORDER BY created_at DESC LIMIT 20');
@@ -70,7 +71,7 @@ module.exports = {
   },
   updateUser: (user) => {
     updateUser.run(user.gender, user.age, user.pregnancy_status, user.goal,
-      user.is_pro ? 1 : 0, user.analysis_count, user.chat_count, user.id);
+      user.is_pro ? 1 : 0, user.tz_offset || 0, user.analysis_count, user.chat_count, user.id);
   },
   addSymptom: (userId, text) => insertSymptom.run(userId, text),
   getSymptoms: (userId) => getSymptoms.all(userId),

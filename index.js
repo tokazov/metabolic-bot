@@ -18,6 +18,31 @@ const FREE_CHAT_LIMIT = 10;
 const CHECKOUT_URL = 'https://metaboliccenter.lemonsqueezy.com/checkout/buy/748aab66-5a40-492a-91f6-cda2f844723c';
 const ADMIN_ID = 5309206282;
 
+// ─── Reminders ───
+const reminders = {}; // userId -> [{ time: "HH:MM", meal: "Breakfast", text: "...", active: true }]
+
+function startReminderLoop() {
+  setInterval(() => {
+    const now = new Date();
+    const hhmm = now.toISOString().slice(11, 16); // UTC HH:MM
+    
+    for (const [userId, userReminders] of Object.entries(reminders)) {
+      for (const r of userReminders) {
+        if (r.active && r.utcTime === hhmm && !r.sentToday) {
+          bot.telegram.sendMessage(userId, 
+            `⏰ *Meal Reminder: ${r.meal}*\n\n${r.text}\n\n_Bon appétit! Reply with a food photo and I'll scan it._`,
+            { parse_mode: 'Markdown' }
+          ).catch(console.error);
+          r.sentToday = true;
+          // Reset next minute
+          setTimeout(() => { r.sentToday = false; }, 120000);
+        }
+      }
+    }
+  }, 60000); // Check every minute
+}
+
+
 // In-memory session state (not persisted — onboarding step, awaiting flags, chat history)
 const sessions = {};
 function getSession(id) {
@@ -166,8 +191,8 @@ const MAIN_MENU = Markup.keyboard([
   ['🔬 Analyze Blood Test', '📸 Scan Food'],
   ['🥗 Meal Plan', '💊 Supplement Protocol'],
   ['📋 Track Symptoms', '📄 Interpret Document'],
-  ['💬 Health Chat', '👤 My Profile'],
-  ['⭐ Upgrade to Pro']
+  ['⏰ Meal Reminders', '💬 Health Chat'],
+  ['👤 My Profile', '⭐ Upgrade to Pro']
 ]).resize();
 
 const WELCOME = `🧬 *Welcome to Metabolic Center*
@@ -226,6 +251,21 @@ bot.command('deactivate', async (ctx) => {
   await ctx.reply(`❌ User ${targetId} Pro deactivated.`);
 });
 
+bot.command('reminders_off', async (ctx) => {
+  delete reminders[ctx.from.id];
+  await ctx.reply('⏰ Meal reminders turned off.');
+});
+
+bot.command('reminders', async (ctx) => {
+  const r = reminders[ctx.from.id];
+  if (!r || r.length === 0) {
+    await ctx.reply('No reminders set. Use ⏰ Meal Reminders button to set up.');
+    return;
+  }
+  const schedule = r.map(m => `⏰ ${m.localTime} — ${m.meal}: ${m.text}`).join('\n');
+  await ctx.reply(`🍽 *Your reminders:*\n\n${schedule}\n\nTurn off: /reminders_off`, { parse_mode: 'Markdown' });
+});
+
 bot.command('stats', async (ctx) => {
   if (ctx.from.id !== ADMIN_ID) return;
   const s = DB.stats();
@@ -277,6 +317,48 @@ bot.on('callback_query', async (ctx) => {
     await ctx.answerCbQuery();
     await ctx.editMessageText(`✅ ${user.pregnancy_status === 'not pregnant' ? 'Not pregnant' : user.pregnancy_status}`);
     await ctx.reply('📅 Your age? (type a number)');
+  }
+
+  if (data.startsWith('tz_')) {
+    const offset = parseInt(data.replace('tz_', ''));
+    user.tz_offset = offset;
+    DB.updateUser(user);
+    const session = getSession(ctx.from.id);
+    session.awaitingTimezone = false;
+    session.awaitingReminders = true;
+    await ctx.answerCbQuery();
+    await ctx.editMessageText(`✅ Timezone: UTC${offset >= 0 ? '+' : ''}${offset}`);
+    await ctx.reply('Now set your meal times. Send me your schedule like this:\n\n`Breakfast 8:00 - Oatmeal with berries\nLunch 13:00 - Chicken salad\nSnack 16:00 - Nuts and fruit\nDinner 19:00 - Salmon with vegetables`\n\nOr just send meal times and I\'ll use your meal plan:', { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [
+      [{ text: '🍽 Use default schedule', callback_data: 'remind_default' }]
+    ]}});
+    return;
+  }
+
+  if (data === 'remind_default') {
+    const offset = user.tz_offset || 0;
+    const defaultMeals = [
+      { meal: 'Breakfast', localTime: '08:00', text: '🥣 Time for breakfast! Start your day with protein and healthy fats.' },
+      { meal: 'Lunch', localTime: '13:00', text: '🥗 Lunch time! Focus on protein + vegetables + complex carbs.' },
+      { meal: 'Snack', localTime: '16:00', text: '🥜 Snack time! Nuts, fruit, or yogurt to keep energy stable.' },
+      { meal: 'Dinner', localTime: '19:00', text: '🍽 Dinner time! Light protein + vegetables. Avoid heavy carbs.' }
+    ];
+    
+    reminders[ctx.from.id] = defaultMeals.map(m => {
+      const [h, min] = m.localTime.split(':').map(Number);
+      const utcH = ((h - offset) + 24) % 24;
+      return { ...m, utcTime: `${String(utcH).padStart(2,'0')}:${String(min).padStart(2,'0')}`, active: true, sentToday: false };
+    });
+    
+    DB.logEvent(ctx.from.id, 'REMINDERS_SET', 'default schedule');
+    await ctx.answerCbQuery();
+    await ctx.editMessageText('✅ Default schedule set!');
+    const schedule = defaultMeals.map(m => `⏰ ${m.localTime} — ${m.meal}`).join('\n');
+    await ctx.reply(`🍽 *Your meal reminders:*\n\n${schedule}\n\nI'll notify you before each meal!\n\nTo turn off: /reminders_off`, { parse_mode: 'Markdown' });
+    return;
+  }
+
+  if (data === 'goal_') {
+    // skip — handled below
   }
 
   if (data.startsWith('goal_')) {
@@ -375,6 +457,41 @@ bot.on('text', async (ctx) => {
   const session = getSession(ctx.from.id);
   const text = ctx.message.text.trim();
 
+  // Custom reminder schedule
+  if (session.awaitingReminders) {
+    session.awaitingReminders = false;
+    const offset = user.tz_offset || 0;
+    const lines = text.split('\n').filter(l => l.trim());
+    const parsed = [];
+    
+    for (const line of lines) {
+      const match = line.match(/(.+?)\s+(\d{1,2}:\d{2})\s*[-–]?\s*(.*)/);
+      if (match) {
+        const [, meal, localTime, desc] = match;
+        const [h, min] = localTime.split(':').map(Number);
+        const utcH = ((h - offset) + 24) % 24;
+        parsed.push({
+          meal: meal.trim(),
+          localTime,
+          text: desc.trim() || `Time for ${meal.trim()}!`,
+          utcTime: `${String(utcH).padStart(2,'0')}:${String(min).padStart(2,'0')}`,
+          active: true,
+          sentToday: false
+        });
+      }
+    }
+    
+    if (parsed.length > 0) {
+      reminders[ctx.from.id] = parsed;
+      DB.logEvent(ctx.from.id, 'REMINDERS_SET', `${parsed.length} custom meals`);
+      const schedule = parsed.map(m => `⏰ ${m.localTime} — ${m.meal}: ${m.text}`).join('\n');
+      await ctx.reply(`✅ *Reminders set!*\n\n${schedule}\n\nI'll notify you before each meal!\nTo turn off: /reminders_off`, { parse_mode: 'Markdown' });
+    } else {
+      await ctx.reply('Couldn\'t parse schedule. Try format:\n`Breakfast 8:00 - Oatmeal`\n`Lunch 13:00 - Chicken salad`', { parse_mode: 'Markdown' });
+    }
+    return;
+  }
+
   // Onboarding: age
   if (session.step === 'age') {
     const age = parseInt(text);
@@ -457,6 +574,15 @@ bot.on('text', async (ctx) => {
       });
       await sendLong(ctx, r.choices[0].message.content);
     } catch (e) { await ctx.reply('❌ Error. Try again.'); }
+    return;
+  }
+  if (text === '⏰ Meal Reminders') {
+    session.awaitingTimezone = true;
+    await ctx.reply('⏰ Set up meal reminders!\n\nFirst, what\'s your timezone? (e.g. +4 for Dubai, +4 for Georgia, -5 for New York)', { reply_markup: { inline_keyboard: [
+      [{ text: '🇬🇪 Tbilisi (UTC+4)', callback_data: 'tz_4' }, { text: '🇦🇪 Dubai (UTC+4)', callback_data: 'tz_4' }],
+      [{ text: '🇺🇸 New York (UTC-5)', callback_data: 'tz_-5' }, { text: '🇺🇸 LA (UTC-8)', callback_data: 'tz_-8' }],
+      [{ text: '🇬🇧 London (UTC+0)', callback_data: 'tz_0' }, { text: '🇪🇺 Berlin (UTC+1)', callback_data: 'tz_1' }]
+    ]}});
     return;
   }
   if (text === '📋 Track Symptoms') {
@@ -593,6 +719,10 @@ server.listen(PORT, () => console.log(`Webhook server on port ${PORT}`));
 
 // ─── Launch ───
 bot.catch((err) => console.error('Bot error:', err));
-bot.launch().then(() => console.log('🧬 Metabolic Center Bot is running!'));
+bot.launch().then(() => {
+  console.log('🧬 Metabolic Center Bot is running!');
+  startReminderLoop();
+  console.log('⏰ Reminder loop started');
+});
 process.once('SIGINT', () => { bot.stop('SIGINT'); server.close(); });
 process.once('SIGTERM', () => { bot.stop('SIGTERM'); server.close(); });
