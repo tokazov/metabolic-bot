@@ -722,7 +722,7 @@ bot.on('callback_query', async (ctx) => {
     return;
   }
 
-  if (data.startsWith('mp_') || data === 'meal_reroll') {
+  if ((data.startsWith('mp_') && data !== 'mp_menu') || data === 'meal_reroll') {
     if (!canUse(user, 'chat')) { await ctx.replyWithMarkdown(UPGRADE_MSG); return; }
     user.chat_count++; DB.updateUser(user);
 
@@ -767,7 +767,7 @@ bot.on('callback_query', async (ctx) => {
   if (data === 'mp_menu') {
     const ru = user.lang === 'ru';
     await ctx.answerCbQuery();
-    await ctx.editMessageText(ru ? '🥗 *Выберите тип плана питания:*' : '🥗 *Choose your meal plan type:*', {
+    await ctx.reply(ru ? '🥗 *Выберите тип плана питания:*' : '🥗 *Choose your meal plan type:*', {
       parse_mode: 'Markdown',
       reply_markup: { inline_keyboard: [
         [{ text: ru ? '⚖️ Сбалансированное питание' : '⚖️ Balanced Diet', callback_data: 'mp_balanced' }],
