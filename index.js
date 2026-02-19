@@ -323,42 +323,75 @@ bot.on('callback_query', async (ctx) => {
     const offset = parseInt(data.replace('tz_', ''));
     user.tz_offset = offset;
     DB.updateUser(user);
-    const session = getSession(ctx.from.id);
-    session.awaitingTimezone = false;
-    session.awaitingReminders = true;
     await ctx.answerCbQuery();
     await ctx.editMessageText(`✅ Timezone: UTC${offset >= 0 ? '+' : ''}${offset}`);
-    await ctx.reply('Now set your meal times. Send me your schedule like this:\n\n`Breakfast 8:00 - Oatmeal with berries\nLunch 13:00 - Chicken salad\nSnack 16:00 - Nuts and fruit\nDinner 19:00 - Salmon with vegetables`\n\nOr just send meal times and I\'ll use your meal plan:', { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [
-      [{ text: '🍽 Use default schedule', callback_data: 'remind_default' }]
+    await ctx.reply('Choose your eating schedule:', { reply_markup: { inline_keyboard: [
+      [{ text: '🌅 Early Bird (7-12-15-18)', callback_data: 'sched_early' }],
+      [{ text: '☀️ Standard (8-13-16-19)', callback_data: 'sched_standard' }],
+      [{ text: '🌙 Late Riser (10-14-17-21)', callback_data: 'sched_late' }],
+      [{ text: '🔥 IF 16:8 (12-15-19)', callback_data: 'sched_if' }]
     ]}});
     return;
   }
 
-  if (data === 'remind_default') {
+  if (data === 'remind_setup') {
+    await ctx.answerCbQuery();
+    await ctx.editMessageText('Choose timezone:', { reply_markup: { inline_keyboard: [
+      [{ text: '🇬🇪 Tbilisi +4', callback_data: 'tz_4' }, { text: '🇦🇪 Dubai +4', callback_data: 'tz_4' }],
+      [{ text: '🇹🇷 Istanbul +3', callback_data: 'tz_3' }, { text: '🇪🇺 Berlin +1', callback_data: 'tz_1' }],
+      [{ text: '🇬🇧 London 0', callback_data: 'tz_0' }, { text: '🇺🇸 NY -5', callback_data: 'tz_-5' }]
+    ]}});
+    return;
+  }
+
+  if (data === 'remind_off') {
+    delete reminders[ctx.from.id];
+    await ctx.answerCbQuery();
+    await ctx.editMessageText('⏰ Reminders turned off.');
+    return;
+  }
+
+  if (data.startsWith('sched_')) {
     const offset = user.tz_offset || 0;
-    const defaultMeals = [
-      { meal: 'Breakfast', localTime: '08:00', text: '🥣 Time for breakfast! Start your day with protein and healthy fats.' },
-      { meal: 'Lunch', localTime: '13:00', text: '🥗 Lunch time! Focus on protein + vegetables + complex carbs.' },
-      { meal: 'Snack', localTime: '16:00', text: '🥜 Snack time! Nuts, fruit, or yogurt to keep energy stable.' },
-      { meal: 'Dinner', localTime: '19:00', text: '🍽 Dinner time! Light protein + vegetables. Avoid heavy carbs.' }
-    ];
+    const schedules = {
+      sched_early: [
+        { meal: '🥣 Breakfast', localTime: '07:00', text: 'Eggs, avocado toast, or oatmeal with berries and nuts.' },
+        { meal: '🥗 Lunch', localTime: '12:00', text: 'Grilled protein + salad + complex carbs (quinoa, sweet potato).' },
+        { meal: '🥜 Snack', localTime: '15:00', text: 'Greek yogurt with nuts, or apple with almond butter.' },
+        { meal: '🍽 Dinner', localTime: '18:00', text: 'Fish or chicken + roasted vegetables. Keep it light.' }
+      ],
+      sched_standard: [
+        { meal: '🥣 Breakfast', localTime: '08:00', text: 'Protein smoothie, eggs, or oatmeal with fruits.' },
+        { meal: '🥗 Lunch', localTime: '13:00', text: 'Balanced plate: protein + veggies + healthy carbs.' },
+        { meal: '🥜 Snack', localTime: '16:00', text: 'Handful of nuts, fruit, or protein bar.' },
+        { meal: '🍽 Dinner', localTime: '19:00', text: 'Lean protein + vegetables. Finish eating 3h before sleep.' }
+      ],
+      sched_late: [
+        { meal: '🥣 Breakfast', localTime: '10:00', text: 'Big protein breakfast to fuel your day.' },
+        { meal: '🥗 Lunch', localTime: '14:00', text: 'Main meal — protein, veggies, healthy fats.' },
+        { meal: '🥜 Snack', localTime: '17:00', text: 'Light snack — nuts, hummus, veggies.' },
+        { meal: '🍽 Dinner', localTime: '21:00', text: 'Light dinner — soup, salad, or fish.' }
+      ],
+      sched_if: [
+        { meal: '🥗 First meal', localTime: '12:00', text: 'Break your fast with protein + healthy fats + fiber.' },
+        { meal: '🥜 Snack', localTime: '15:00', text: 'Protein-rich snack to stay fueled.' },
+        { meal: '🍽 Last meal', localTime: '19:00', text: 'Complete meal before your fasting window. Protein + veggies.' }
+      ]
+    };
+
+    const meals = schedules[data] || schedules.sched_standard;
     
-    reminders[ctx.from.id] = defaultMeals.map(m => {
+    reminders[ctx.from.id] = meals.map(m => {
       const [h, min] = m.localTime.split(':').map(Number);
       const utcH = ((h - offset) + 24) % 24;
       return { ...m, utcTime: `${String(utcH).padStart(2,'0')}:${String(min).padStart(2,'0')}`, active: true, sentToday: false };
     });
-    
-    DB.logEvent(ctx.from.id, 'REMINDERS_SET', 'default schedule');
-    await ctx.answerCbQuery();
-    await ctx.editMessageText('✅ Default schedule set!');
-    const schedule = defaultMeals.map(m => `⏰ ${m.localTime} — ${m.meal}`).join('\n');
-    await ctx.reply(`🍽 *Your meal reminders:*\n\n${schedule}\n\nI'll notify you before each meal!\n\nTo turn off: /reminders_off`, { parse_mode: 'Markdown' });
-    return;
-  }
 
-  if (data === 'goal_') {
-    // skip — handled below
+    DB.logEvent(ctx.from.id, 'REMINDERS_SET', data);
+    await ctx.answerCbQuery();
+    const schedule = meals.map(m => `⏰ ${m.localTime} — ${m.meal}`).join('\n');
+    await ctx.editMessageText(`✅ *Schedule set!*\n\n${schedule}\n\nI'll send you a reminder with meal suggestions before each one!`, { parse_mode: 'Markdown' });
+    return;
   }
 
   if (data.startsWith('goal_')) {
@@ -457,41 +490,6 @@ bot.on('text', async (ctx) => {
   const session = getSession(ctx.from.id);
   const text = ctx.message.text.trim();
 
-  // Custom reminder schedule
-  if (session.awaitingReminders) {
-    session.awaitingReminders = false;
-    const offset = user.tz_offset || 0;
-    const lines = text.split('\n').filter(l => l.trim());
-    const parsed = [];
-    
-    for (const line of lines) {
-      const match = line.match(/(.+?)\s+(\d{1,2}:\d{2})\s*[-–]?\s*(.*)/);
-      if (match) {
-        const [, meal, localTime, desc] = match;
-        const [h, min] = localTime.split(':').map(Number);
-        const utcH = ((h - offset) + 24) % 24;
-        parsed.push({
-          meal: meal.trim(),
-          localTime,
-          text: desc.trim() || `Time for ${meal.trim()}!`,
-          utcTime: `${String(utcH).padStart(2,'0')}:${String(min).padStart(2,'0')}`,
-          active: true,
-          sentToday: false
-        });
-      }
-    }
-    
-    if (parsed.length > 0) {
-      reminders[ctx.from.id] = parsed;
-      DB.logEvent(ctx.from.id, 'REMINDERS_SET', `${parsed.length} custom meals`);
-      const schedule = parsed.map(m => `⏰ ${m.localTime} — ${m.meal}: ${m.text}`).join('\n');
-      await ctx.reply(`✅ *Reminders set!*\n\n${schedule}\n\nI'll notify you before each meal!\nTo turn off: /reminders_off`, { parse_mode: 'Markdown' });
-    } else {
-      await ctx.reply('Couldn\'t parse schedule. Try format:\n`Breakfast 8:00 - Oatmeal`\n`Lunch 13:00 - Chicken salad`', { parse_mode: 'Markdown' });
-    }
-    return;
-  }
-
   // Onboarding: age
   if (session.step === 'age') {
     const age = parseInt(text);
@@ -577,12 +575,22 @@ bot.on('text', async (ctx) => {
     return;
   }
   if (text === '⏰ Meal Reminders') {
-    session.awaitingTimezone = true;
-    await ctx.reply('⏰ Set up meal reminders!\n\nFirst, what\'s your timezone? (e.g. +4 for Dubai, +4 for Georgia, -5 for New York)', { reply_markup: { inline_keyboard: [
-      [{ text: '🇬🇪 Tbilisi (UTC+4)', callback_data: 'tz_4' }, { text: '🇦🇪 Dubai (UTC+4)', callback_data: 'tz_4' }],
-      [{ text: '🇺🇸 New York (UTC-5)', callback_data: 'tz_-5' }, { text: '🇺🇸 LA (UTC-8)', callback_data: 'tz_-8' }],
-      [{ text: '🇬🇧 London (UTC+0)', callback_data: 'tz_0' }, { text: '🇪🇺 Berlin (UTC+1)', callback_data: 'tz_1' }]
-    ]}});
+    // Check if already has reminders
+    if (reminders[ctx.from.id] && reminders[ctx.from.id].length > 0) {
+      const r = reminders[ctx.from.id];
+      const schedule = r.map(m => `⏰ ${m.localTime} — ${m.meal}`).join('\n');
+      await ctx.reply(`🍽 *Your reminders:*\n\n${schedule}`, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [
+        [{ text: '🔄 Change schedule', callback_data: 'remind_setup' }],
+        [{ text: '❌ Turn off reminders', callback_data: 'remind_off' }]
+      ]}});
+    } else {
+      await ctx.reply('⏰ *Meal Reminders*\n\nI\'ll remind you when to eat and what to eat.\n\nChoose your timezone:', { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [
+        [{ text: '🇬🇪 Tbilisi +4', callback_data: 'tz_4' }, { text: '🇦🇪 Dubai +4', callback_data: 'tz_4' }],
+        [{ text: '🇹🇷 Istanbul +3', callback_data: 'tz_3' }, { text: '🇪🇺 Berlin +1', callback_data: 'tz_1' }],
+        [{ text: '🇬🇧 London 0', callback_data: 'tz_0' }, { text: '🇺🇸 NY -5', callback_data: 'tz_-5' }],
+        [{ text: '🇺🇸 LA -8', callback_data: 'tz_-8' }, { text: '🇷🇺 Moscow +3', callback_data: 'tz_3' }]
+      ]}});
+    }
     return;
   }
   if (text === '📋 Track Symptoms') {
