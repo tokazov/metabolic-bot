@@ -130,7 +130,7 @@ function isPro(user) {
 // ─── Translations ───
 const i18n = {
   en: {
-    welcome: `🧬 *Welcome to Metabolic Center*\n\nYour AI Metabolic Intelligence assistant.\n\n🔬 *Analyze Blood Tests* — full metabolic report from a photo\n📸 *Scan Food* — photo your meal, get calories & metabolic score\n🥗 *Meal Plan* — personalized nutrition\n💊 *Supplement Protocol* — evidence-based stack\n📋 *Track Symptoms* — detect patterns\n📄 *Interpret Documents* — explain any medical doc\n📔 *Food Diary* — track meals & macros\n🧹 *Detox Program* — 7-day challenge\n💬 *Health Chat* — ask anything\n\n📸 *2 free analyses + 10 free chats to start!*`,
+    welcome: `🧬 *Welcome to Metabolic Center!*\n\nI'm your AI health assistant. Here's what I can do:\n\n📸 Analyze blood tests from a photo\n🥗 Create personalized meal plans\n💊 Build supplement protocols\n\n*Let's set up your profile in 30 seconds* 👇`,
     choose_lang: '🌐 Choose your language:',
     sex_q: 'Let me set up your profile.\n\n👤 Biological sex?',
     male: '♂️ Male', female: '♀️ Female',
@@ -155,7 +155,7 @@ const i18n = {
     diet_done: '✅ Done',
     goal_q: '🎯 Primary goal?',
     goal_energy: '⚡ Energy & Performance', goal_longevity: '🧬 Longevity', goal_weight: '⚖️ Weight', goal_general: '💚 General Health',
-    profile_done: '✅ Profile complete! Use the menu below 👇',
+    profile_done: '✅ Profile complete!\n\n📸 *Send a blood test photo* — get your AI report in 60 seconds!\n\nOr choose from the menu 👇',
     analyzing: '🔬 Analyzing... (30-60 sec)',
     scanning_food: '📸 Scanning your meal...',
     interpreting: '📄 Interpreting...',
@@ -218,9 +218,12 @@ const i18n = {
     detox_pro_required: '🔒 *Days 3-7 require Pro.*\n\nUpgrade to continue your detox journey!\n👉 [Upgrade to Pro](CHECKOUT_URL)',
     detox_generating: '🧹 Generating your detox plan...',
     detox_status: 'Day CURRENT/7 — COMPLETED completed',
+    complete_profile_prompt: '💡 *Want more accurate results?*\nComplete your profile for better personalized recommendations!',
+    complete_profile_btn: '📝 Complete profile',
+    onboarding_reminder: '👋 You didn\'t finish setup! It takes 30 seconds.\n\nPress /start to continue and get your free AI blood test analysis!',
   },
   ru: {
-    welcome: `🧬 *Добро пожаловать в Metabolic Center*\n\nВаш AI-ассистент метаболического здоровья.\n\n🔬 *Анализ крови* — полный отчёт по фото\n📸 *Сканер еды* — фото блюда → калории и оценка\n🥗 *План питания* — персональное меню\n💊 *Протокол добавок* — подбор добавок\n📋 *Трекер симптомов* — отслеживание паттернов\n📄 *Расшифровка документов* — объяснение мед. документов\n📔 *Дневник питания* — учёт калорий и макросов\n🧹 *Детокс программа* — 7-дневный челлендж\n💬 *Чат о здоровье* — любые вопросы\n\n📸 *2 бесплатных анализа + 10 чатов!*`,
+    welcome: `🧬 *Добро пожаловать в Metabolic Center!*\n\nЯ ваш AI-ассистент здоровья. Вот что я умею:\n\n📸 Анализ крови по фото\n🥗 Персональные планы питания\n💊 Протоколы добавок\n\n*Настроим профиль за 30 секунд* 👇`,
     choose_lang: '🌐 Выберите язык:',
     sex_q: 'Настроим ваш профиль.\n\n👤 Ваш пол?',
     male: '♂️ Мужской', female: '♀️ Женский',
@@ -245,7 +248,7 @@ const i18n = {
     diet_done: '✅ Готово',
     goal_q: '🎯 Главная цель?',
     goal_energy: '⚡ Энергия', goal_longevity: '🧬 Долголетие', goal_weight: '⚖️ Вес', goal_general: '💚 Общее здоровье',
-    profile_done: '✅ Профиль готов! Используйте меню 👇',
+    profile_done: '✅ Профиль готов!\n\n📸 *Отправьте фото анализа крови* — получите AI-отчёт за 60 секунд!\n\nИли выберите из меню 👇',
     analyzing: '🔬 Анализирую... (30-60 сек)',
     scanning_food: '📸 Сканирую блюдо...',
     interpreting: '📄 Расшифровываю...',
@@ -308,6 +311,9 @@ const i18n = {
     detox_pro_required: '🔒 *Дни 3-7 доступны только в Pro.*\n\nОбновитесь чтобы продолжить детокс!\n👉 [Перейти на Pro](CHECKOUT_URL)',
     detox_generating: '🧹 Создаю ваш план детокса...',
     detox_status: 'День CURRENT/7 — COMPLETED завершено',
+    complete_profile_prompt: '💡 *Хотите точнее результаты?*\nЗаполните профиль для лучших персональных рекомендаций!',
+    complete_profile_btn: '📝 Заполнить профиль',
+    onboarding_reminder: '👋 Вы не завершили настройку! Это займёт 30 секунд.\n\nНажмите /start чтобы продолжить и получить бесплатный AI-анализ крови!',
   }
 };
 
@@ -1167,6 +1173,61 @@ bot.on('callback_query', async (ctx) => {
     return;
   }
 
+  // ─── Complete profile callback ───
+  if (data === 'complete_profile') {
+    session.step = 'cp_height';
+    await ctx.answerCbQuery();
+    await ctx.reply(t(user, 'height_q'));
+    return;
+  }
+
+  if (data.startsWith('cp_act_')) {
+    const levels = { cp_act_low: 'Sedentary', cp_act_moderate: 'Moderate', cp_act_high: 'High', cp_act_athlete: 'Athlete' };
+    const levelsRu = { cp_act_low: 'Низкий', cp_act_moderate: 'Средний', cp_act_high: 'Высокий', cp_act_athlete: 'Атлет' };
+    user.activity_level = levels[data];
+    DB.updateUser(user);
+    session.step = 'cp_diet';
+    session.dietSelections = [];
+    await ctx.answerCbQuery();
+    const label = user.lang === 'ru' ? levelsRu[data] : levels[data];
+    await ctx.editMessageText(`✅ ${label}`);
+    await ctx.reply(t(user, 'diet_q'), { reply_markup: { inline_keyboard: [
+      [{ text: t(user, 'diet_none'), callback_data: 'cp_diet_none' }],
+      [{ text: t(user, 'diet_vegetarian'), callback_data: 'cp_diet_vegetarian' }],
+      [{ text: t(user, 'diet_vegan'), callback_data: 'cp_diet_vegan' }],
+      [{ text: t(user, 'diet_gluten_free'), callback_data: 'cp_diet_gf' }],
+      [{ text: t(user, 'diet_lactose_free'), callback_data: 'cp_diet_lf' }],
+      [{ text: t(user, 'diet_halal'), callback_data: 'cp_diet_halal' }],
+      [{ text: t(user, 'diet_keto'), callback_data: 'cp_diet_keto' }],
+      [{ text: t(user, 'diet_done'), callback_data: 'cp_diet_done' }]
+    ]}});
+    return;
+  }
+
+  if (data.startsWith('cp_diet_')) {
+    if (!session.dietSelections) session.dietSelections = [];
+    if (data === 'cp_diet_none' || data === 'cp_diet_done') {
+      if (data === 'cp_diet_none') session.dietSelections = [];
+      user.diet_restrictions = session.dietSelections.join(', ') || '';
+      DB.updateUser(user);
+      session.step = 'ready';
+      await ctx.answerCbQuery();
+      const ru = user.lang === 'ru';
+      await ctx.editMessageText(`✅ ${user.diet_restrictions || (ru ? 'Нет ограничений' : 'No restrictions')}`);
+      await ctx.replyWithMarkdown(ru ? '✅ Профиль дополнен! Теперь рекомендации будут точнее 🎯' : '✅ Profile completed! Your recommendations will now be more accurate 🎯', getMenu(user));
+      return;
+    }
+    const dietLabels = { cp_diet_vegetarian: 'Vegetarian', cp_diet_vegan: 'Vegan', cp_diet_gf: 'Gluten-free', cp_diet_lf: 'Lactose-free', cp_diet_halal: 'Halal', cp_diet_keto: 'Keto' };
+    const label = dietLabels[data];
+    if (label) {
+      const idx = session.dietSelections.indexOf(label);
+      if (idx >= 0) session.dietSelections.splice(idx, 1);
+      else session.dietSelections.push(label);
+      await ctx.answerCbQuery(`${idx >= 0 ? '❌' : '✅'} ${label}`);
+    }
+    return;
+  }
+
   // ─── Referral callback ───
   if (data === 'referral_show') {
     await ctx.answerCbQuery();
@@ -1275,6 +1336,7 @@ bot.on('photo', async (ctx) => {
     DB.updateUser(user);
     DB.logEvent(ctx.from.id, 'ANALYSIS', `#${user.analysis_count}`);
     await sendLong(ctx, response.choices[0].message.content);
+    maybePromptCompleteProfile(ctx.from.id).catch(() => {});
 
     const rem = FREE_ANALYSIS_LIMIT - user.analysis_count;
     if (!isPro(user)) {
@@ -1331,26 +1393,33 @@ bot.on('text', async (ctx) => {
     await ctx.replyWithMarkdown(t(user, 'trial_expired'));
   }
 
-  // Onboarding: age
+  // Onboarding: age → skip to goal
   if (session.step === 'age') {
     const age = parseInt(text);
     if (age > 0 && age < 120) {
       user.age = age;
       DB.updateUser(user);
-      session.step = 'height';
-      await ctx.reply(`✅ ${age}\n\n${t(user, 'height_q')}`);
+      session.step = 'goal';
+      await ctx.reply(`✅ ${age}`);
+      await ctx.reply(t(user, 'goal_q'), { reply_markup: { inline_keyboard: [
+        [{ text: t(user, 'goal_energy'), callback_data: 'goal_energy' }],
+        [{ text: t(user, 'goal_longevity'), callback_data: 'goal_longevity' }],
+        [{ text: t(user, 'goal_weight'), callback_data: 'goal_weight' }],
+        [{ text: t(user, 'goal_general'), callback_data: 'goal_general' }]
+      ]}});
     } else {
       await ctx.reply(user.lang === 'ru' ? 'Введите корректный возраст (1-119).' : 'Enter valid age (1-119).');
     }
     return;
   }
 
-  if (session.step === 'height') {
+  // Complete profile flow: height
+  if (session.step === 'cp_height') {
     const h = parseInt(text);
     if (h > 50 && h < 300) {
       user.height = h;
       DB.updateUser(user);
-      session.step = 'weight';
+      session.step = 'cp_weight';
       await ctx.reply(`✅ ${h} ${user.lang === 'ru' ? 'см' : 'cm'}\n\n${t(user, 'weight_q')}`);
     } else {
       await ctx.reply(user.lang === 'ru' ? 'Введите рост в см (50-300).' : 'Enter height in cm (50-300).');
@@ -1358,17 +1427,17 @@ bot.on('text', async (ctx) => {
     return;
   }
 
-  if (session.step === 'weight') {
+  if (session.step === 'cp_weight') {
     const w = parseFloat(text);
     if (w > 20 && w < 500) {
       user.weight = w;
       DB.updateUser(user);
-      session.step = 'activity';
+      session.step = 'cp_activity';
       await ctx.reply(`✅ ${w} ${user.lang === 'ru' ? 'кг' : 'kg'}\n\n${t(user, 'activity_q')}`, { reply_markup: { inline_keyboard: [
-        [{ text: t(user, 'activity_low'), callback_data: 'act_low' }],
-        [{ text: t(user, 'activity_moderate'), callback_data: 'act_moderate' }],
-        [{ text: t(user, 'activity_high'), callback_data: 'act_high' }],
-        [{ text: t(user, 'activity_athlete'), callback_data: 'act_athlete' }]
+        [{ text: t(user, 'activity_low'), callback_data: 'cp_act_low' }],
+        [{ text: t(user, 'activity_moderate'), callback_data: 'cp_act_moderate' }],
+        [{ text: t(user, 'activity_high'), callback_data: 'cp_act_high' }],
+        [{ text: t(user, 'activity_athlete'), callback_data: 'cp_act_athlete' }]
       ]}});
     } else {
       await ctx.reply(user.lang === 'ru' ? 'Введите вес в кг (20-500).' : 'Enter weight in kg (20-500).');
@@ -1565,6 +1634,7 @@ bot.on('text', async (ctx) => {
   if (!canUse(user, 'chat')) { await ctx.replyWithMarkdown(UPGRADE_MSG); return; }
   user.chat_count++; DB.updateUser(user);
   DB.logEvent(ctx.from.id, 'CHAT', text.slice(0, 100));
+  maybePromptCompleteProfile(ctx.from.id).catch(() => {});
 
   try {
     session.history.push({ role: 'user', content: text });
@@ -1649,6 +1719,45 @@ const server = http.createServer((req, res) => {
 
 server.listen(PORT, () => console.log(`Webhook server on port ${PORT}`));
 
+// ─── Complete profile prompt (after 2nd usage) ───
+async function maybePromptCompleteProfile(userId) {
+  const user = DB.getUser(userId);
+  if (!user) return;
+  if (user.height) return; // already completed
+  if ((user.chat_count + user.analysis_count) < 2) return;
+  // Check if we already prompted
+  const already = DB.db.prepare("SELECT 1 FROM activity_log WHERE user_id = ? AND event = 'COMPLETE_PROFILE_PROMPT' LIMIT 1").get(userId);
+  if (already) return;
+  DB.logEvent(userId, 'COMPLETE_PROFILE_PROMPT', '');
+  const ru = user.lang === 'ru';
+  await bot.telegram.sendMessage(userId, t(user, 'complete_profile_prompt'), {
+    parse_mode: 'Markdown',
+    reply_markup: { inline_keyboard: [
+      [{ text: t(user, 'complete_profile_btn'), callback_data: 'complete_profile' }]
+    ]}
+  }).catch(() => {});
+}
+
+// ─── Onboarding reminder loop (Change 3) ───
+function startOnboardingReminderLoop() {
+  setInterval(() => {
+    try {
+      // Users who joined >1h ago but have no gender or age set
+      const incomplete = DB.db.prepare(
+        "SELECT id, lang FROM users WHERE (gender IS NULL OR age IS NULL) AND joined_at <= datetime('now', '-1 hour')"
+      ).all();
+      for (const u of incomplete) {
+        // Check if reminder already sent
+        const sent = DB.db.prepare("SELECT 1 FROM activity_log WHERE user_id = ? AND event = 'ONBOARDING_REMINDER' LIMIT 1").get(u.id);
+        if (sent) continue;
+        DB.logEvent(u.id, 'ONBOARDING_REMINDER', '');
+        const user = DB.getUser(u.id);
+        bot.telegram.sendMessage(u.id, t(user, 'onboarding_reminder'), { parse_mode: 'Markdown' }).catch(() => {});
+      }
+    } catch (e) { console.error('Onboarding reminder error:', e); }
+  }, 60 * 60 * 1000); // every hour
+}
+
 // ─── Launch ───
 bot.catch((err) => console.error('Bot error:', err));
 bot.launch().then(() => {
@@ -1656,7 +1765,8 @@ bot.launch().then(() => {
   startReminderLoop();
   startDailySummaryLoop();
   startDetoxReminderLoop();
-  console.log('⏰ All loops started (reminders, food diary summary, detox reminders)');
+  startOnboardingReminderLoop();
+  console.log('⏰ All loops started (reminders, food diary summary, detox reminders, onboarding reminders)');
 });
 process.once('SIGINT', () => { bot.stop('SIGINT'); server.close(); });
 process.once('SIGTERM', () => { bot.stop('SIGTERM'); server.close(); });
