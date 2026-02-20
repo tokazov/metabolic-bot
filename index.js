@@ -15,8 +15,10 @@ const openai = new OpenAI({ apiKey: OPENAI_KEY });
 // ─── Config ───
 const FREE_ANALYSIS_LIMIT = 2;
 const FREE_CHAT_LIMIT = 10;
-const PADDLE_PRICE_ID = process.env.PADDLE_PRICE_ID || 'pri_01khx8e5d6xe0ch9c976a8nhw5';
-const CHECKOUT_URL = `https://buy.paddle.com/product/${PADDLE_PRICE_ID}`;
+const PADDLE_PRICE_ID = process.env.PADDLE_PRICE_ID || 'pri_01khxw8k2hnkfvt7fbhkdxvysy';
+const PADDLE_ENV = process.env.PADDLE_ENV || 'sandbox';
+const CHECKOUT_BASE = PADDLE_ENV === 'sandbox' ? 'https://sandbox-buy.paddle.com' : 'https://buy.paddle.com';
+const CHECKOUT_URL = `${CHECKOUT_BASE}/product/${PADDLE_PRICE_ID}`;
 const ADMIN_ID = 5309206282;
 const BOT_USERNAME = 'metabolic_center_ai_bot';
 
@@ -1553,7 +1555,7 @@ bot.on('text', async (ctx) => {
   }
   if (text === '⭐ Upgrade to Pro') {
     DB.logEvent(ctx.from.id, 'UPGRADE_CLICK', '');
-    const personalUrl = `https://buy.paddle.com/product/${PADDLE_PRICE_ID}?custom_data[telegram_id]=${ctx.from.id}`;
+    const personalUrl = `${CHECKOUT_BASE}/product/${PADDLE_PRICE_ID}?custom_data[telegram_id]=${ctx.from.id}`;
     const ru = user.lang === 'ru';
     await ctx.replyWithMarkdown(ru 
       ? `⭐ *Metabolic Center Pro — $19/мес*\n\n✦ Безлимитный доступ\n✦ 7-дневные планы питания + список покупок\n✦ Полная детокс-программа\n\n_Цена основателя зафиксирована навсегда._\n\n👉 [Подписаться](${personalUrl})`
