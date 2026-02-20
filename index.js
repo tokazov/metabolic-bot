@@ -15,7 +15,8 @@ const openai = new OpenAI({ apiKey: OPENAI_KEY });
 // ─── Config ───
 const FREE_ANALYSIS_LIMIT = 2;
 const FREE_CHAT_LIMIT = 10;
-const CHECKOUT_URL = 'https://metaboliccenter.lemonsqueezy.com/checkout/buy/748aab66-5a40-492a-91f6-cda2f844723c';
+const PADDLE_PRICE_ID = process.env.PADDLE_PRICE_ID || 'pri_01khx8e5d6xe0ch9c976a8nhw5';
+const CHECKOUT_URL = `https://buy.paddle.com/product/${PADDLE_PRICE_ID}`;
 const ADMIN_ID = 5309206282;
 const BOT_USERNAME = 'metabolic_center_ai_bot';
 
@@ -1552,8 +1553,11 @@ bot.on('text', async (ctx) => {
   }
   if (text === '⭐ Upgrade to Pro') {
     DB.logEvent(ctx.from.id, 'UPGRADE_CLICK', '');
-    const personalUrl = `${CHECKOUT_URL}?checkout[custom][telegram_id]=${ctx.from.id}`;
-    await ctx.replyWithMarkdown(`⭐ *Metabolic Center Pro — $19/mo*\n\n✦ Unlimited everything\n✦ Priority AI processing\n\n_Founding price locked forever._\n\n👉 [Subscribe Now](${personalUrl})`);
+    const personalUrl = `https://buy.paddle.com/product/${PADDLE_PRICE_ID}?custom_data[telegram_id]=${ctx.from.id}`;
+    const ru = user.lang === 'ru';
+    await ctx.replyWithMarkdown(ru 
+      ? `⭐ *Metabolic Center Pro — $19/мес*\n\n✦ Безлимитный доступ\n✦ 7-дневные планы питания + список покупок\n✦ Полная детокс-программа\n\n_Цена основателя зафиксирована навсегда._\n\n👉 [Подписаться](${personalUrl})`
+      : `⭐ *Metabolic Center Pro — $19/mo*\n\n✦ Unlimited everything\n✦ 7-day meal plans + shopping lists\n✦ Full detox program\n\n_Founding price locked forever._\n\n👉 [Subscribe Now](${personalUrl})`);
     return;
   }
 
@@ -1578,50 +1582,44 @@ bot.on('text', async (ctx) => {
   }
 });
 
-// ─── Webhook server for LemonSqueezy ───
-const WEBHOOK_SECRET = process.env.LEMON_WEBHOOK_SECRET || '';
+// ─── Webhook server for Paddle ───
+const PADDLE_WEBHOOK_SECRET = process.env.PADDLE_WEBHOOK_SECRET || '';
 const PORT = process.env.PORT || 3000;
 
 const server = http.createServer((req, res) => {
-  if (req.method === 'POST' && req.url === '/webhook/lemon') {
+  if (req.method === 'POST' && req.url === '/webhook/paddle') {
     let body = '';
     req.on('data', c => body += c);
     req.on('end', () => {
       try {
-        if (WEBHOOK_SECRET) {
-          const sig = req.headers['x-signature'] || '';
-          const hmac = crypto.createHmac('sha256', WEBHOOK_SECRET).update(body).digest('hex');
-          if (sig !== hmac) {
-            console.error('Invalid webhook signature');
-            res.writeHead(401);
-            res.end('Invalid signature');
-            return;
-          }
-        }
-
         const data = JSON.parse(body);
-        const eventName = data.meta?.event_name;
-        const email = data.data?.attributes?.user_email;
-        const customData = data.meta?.custom_data || {};
+        const eventType = data.event_type;
+        const customData = data.data?.custom_data || {};
         const telegramId = customData.telegram_id;
+        const email = data.data?.customer?.email || '';
 
-        console.log(`Webhook: ${eventName} | email: ${email} | tg: ${telegramId}`);
-        DB.logEvent(telegramId || 0, 'WEBHOOK', `${eventName} | ${email}`);
+        console.log(`Paddle webhook: ${eventType} | email: ${email} | tg: ${telegramId}`);
+        DB.logEvent(telegramId || 0, 'PADDLE_WEBHOOK', `${eventType} | ${email}`);
 
-        if (eventName === 'subscription_created' || eventName === 'order_created') {
+        if (eventType === 'subscription.activated' || eventType === 'subscription.created' || eventType === 'transaction.completed') {
           if (telegramId) {
             const user = DB.getUser(parseInt(telegramId));
             if (user) {
               user.is_pro = 1;
-              user.trial_expires = 0; // Clear trial on real subscription
+              user.trial_expires = 0;
               DB.updateUser(user);
               DB.logEvent(telegramId, 'PRO_ACTIVATED', email);
-              bot.telegram.sendMessage(telegramId, '🎉 *Welcome to Metabolic Center Pro!*\n\nYou now have unlimited access to all features. Enjoy!', { parse_mode: 'Markdown' }).catch(console.error);
+              const ru = user.lang === 'ru';
+              bot.telegram.sendMessage(telegramId, 
+                ru ? '🎉 *Добро пожаловать в Metabolic Center Pro!*\n\nУ вас теперь безлимитный доступ ко всем функциям!' 
+                   : '🎉 *Welcome to Metabolic Center Pro!*\n\nYou now have unlimited access to all features. Enjoy!', 
+                { parse_mode: 'Markdown' }
+              ).catch(console.error);
             }
           }
         }
 
-        if (eventName === 'subscription_expired' || eventName === 'subscription_cancelled') {
+        if (eventType === 'subscription.canceled' || eventType === 'subscription.past_due') {
           if (telegramId) {
             const user = DB.getUser(parseInt(telegramId));
             if (user) {
