@@ -17,6 +17,7 @@ const FREE_ANALYSIS_LIMIT = 2;
 const FREE_CHAT_LIMIT = 10;
 const CHECKOUT_URL = 'https://metaboliccenter.lemonsqueezy.com/checkout/buy/748aab66-5a40-492a-91f6-cda2f844723c';
 const ADMIN_ID = 5309206282;
+const BOT_USERNAME = 'metabolic_center_ai_bot';
 
 // ─── Reminders ───
 const reminders = {}; // userId -> [{ time: "HH:MM", meal: "Breakfast", text: "...", active: true }]
@@ -25,7 +26,7 @@ function startReminderLoop() {
   setInterval(() => {
     const now = new Date();
     const hhmm = now.toISOString().slice(11, 16); // UTC HH:MM
-    
+
     for (const [userId, userReminders] of Object.entries(reminders)) {
       for (const r of userReminders) {
         if (r.active && r.utcTime === hhmm && !r.sentToday) {
@@ -34,24 +35,101 @@ function startReminderLoop() {
           const mealRu = { Breakfast: 'Завтрак', Lunch: 'Обед', Dinner: 'Ужин', Snack: 'Перекус' };
           const mealName = ru ? (mealRu[r.meal] || r.meal) : r.meal;
           const footer = ru ? '_Приятного аппетита! Отправьте фото еды — я её проанализирую._' : '_Bon appétit! Reply with a food photo and I\'ll scan it._';
-          bot.telegram.sendMessage(userId, 
+          bot.telegram.sendMessage(userId,
             `⏰ *${ru ? 'Напоминание' : 'Meal Reminder'}: ${mealName}*\n\n${r.text}\n\n${footer}`,
             { parse_mode: 'Markdown' }
           ).catch(console.error);
           r.sentToday = true;
-          // Reset next minute
           setTimeout(() => { r.sentToday = false; }, 120000);
         }
       }
     }
-  }, 60000); // Check every minute
+  }, 60000);
 }
 
+// ─── Daily food diary summary at 21:00 UTC ───
+function startDailySummaryLoop() {
+  setInterval(() => {
+    const now = new Date();
+    const hhmm = now.toISOString().slice(11, 16);
+    if (hhmm === '21:00') {
+      const usersWithFood = DB.getUsersWithFoodToday();
+      for (const { user_id } of usersWithFood) {
+        sendFoodSummary(user_id).catch(console.error);
+      }
+    }
+  }, 60000);
+}
+
+async function sendFoodSummary(userId) {
+  const entries = DB.getTodayFood(userId);
+  if (!entries.length) return;
+  const user = DB.getUser(userId);
+  const ru = user?.lang === 'ru';
+  const totals = { calories: 0, protein: 0, carbs: 0, fat: 0 };
+  for (const e of entries) {
+    totals.calories += e.calories || 0;
+    totals.protein += e.protein || 0;
+    totals.carbs += e.carbs || 0;
+    totals.fat += e.fat || 0;
+  }
+  const msg = ru
+    ? `📊 *Итоги дня*\n\n🍽 Приёмов пищи: ${entries.length}\n🔥 Калории: ${totals.calories} kcal\n🥩 Белки: ${totals.protein.toFixed(1)}g\n🍞 Углеводы: ${totals.carbs.toFixed(1)}g\n🧈 Жиры: ${totals.fat.toFixed(1)}g\n\n_Хороший день! Продолжайте вести дневник 💪_`
+    : `📊 *Daily Summary*\n\n🍽 Meals logged: ${entries.length}\n🔥 Calories: ${totals.calories} kcal\n🥩 Protein: ${totals.protein.toFixed(1)}g\n🍞 Carbs: ${totals.carbs.toFixed(1)}g\n🧈 Fat: ${totals.fat.toFixed(1)}g\n\n_Great job tracking today! Keep it up 💪_`;
+  await bot.telegram.sendMessage(userId, msg, { parse_mode: 'Markdown' }).catch(() => {});
+}
+
+// ─── Morning detox reminder at 08:00 UTC ───
+function startDetoxReminderLoop() {
+  setInterval(() => {
+    const now = new Date();
+    const hhmm = now.toISOString().slice(11, 16);
+    if (hhmm === '08:00') {
+      // Check all active detox users
+      try {
+        const rows = DB.db.prepare("SELECT * FROM detox WHERE started_at >= date('now', '-7 days')").all();
+        for (const d of rows) {
+          const completedArr = d.completed_days ? d.completed_days.split(',').filter(Boolean) : [];
+          const currentDay = completedArr.length + 1;
+          if (currentDay <= 7) {
+            const user = DB.getUser(d.user_id);
+            if (!user) continue;
+            const ru = user.lang === 'ru';
+            const themes = ['Hydration', 'Sugar-free', 'Green day', 'Anti-inflammatory', 'Gut health', 'Antioxidants', 'Integration'];
+            const themesRu = ['Гидратация', 'Без сахара', 'Зелёный день', 'Противовоспалительный', 'Здоровье кишечника', 'Антиоксиданты', 'Интеграция'];
+            const theme = ru ? themesRu[currentDay - 1] : themes[currentDay - 1];
+            bot.telegram.sendMessage(d.user_id,
+              `🧹 *${ru ? 'Детокс — День' : 'Detox — Day'} ${currentDay}: ${theme}*\n\n${ru ? 'Нажмите "📋 Задание дня" чтобы узнать план!' : 'Tap "📋 Today\'s task" to see your plan!'}`,
+              { parse_mode: 'Markdown' }
+            ).catch(() => {});
+          }
+        }
+      } catch (e) { console.error('Detox reminder error:', e); }
+    }
+  }, 60000);
+}
+
+
+// ─── Trial check helper ───
+function checkTrialExpiry(user) {
+  if (user.is_pro && user.trial_expires && user.trial_expires > 0 && Date.now() > user.trial_expires) {
+    user.is_pro = 0;
+    user.trial_expires = 0;
+    DB.updateUser(user);
+    return true; // expired
+  }
+  return false;
+}
+
+function isPro(user) {
+  checkTrialExpiry(user);
+  return !!user.is_pro;
+}
 
 // ─── Translations ───
 const i18n = {
   en: {
-    welcome: `🧬 *Welcome to Metabolic Center*\n\nYour AI Metabolic Intelligence assistant.\n\n🔬 *Analyze Blood Tests* — full metabolic report from a photo\n📸 *Scan Food* — photo your meal, get calories & metabolic score\n🥗 *Meal Plan* — personalized nutrition\n💊 *Supplement Protocol* — evidence-based stack\n📋 *Track Symptoms* — detect patterns\n📄 *Interpret Documents* — explain any medical doc\n💬 *Health Chat* — ask anything\n\n📸 *2 free analyses + 10 free chats to start!*`,
+    welcome: `🧬 *Welcome to Metabolic Center*\n\nYour AI Metabolic Intelligence assistant.\n\n🔬 *Analyze Blood Tests* — full metabolic report from a photo\n📸 *Scan Food* — photo your meal, get calories & metabolic score\n🥗 *Meal Plan* — personalized nutrition\n💊 *Supplement Protocol* — evidence-based stack\n📋 *Track Symptoms* — detect patterns\n📄 *Interpret Documents* — explain any medical doc\n📔 *Food Diary* — track meals & macros\n🧹 *Detox Program* — 7-day challenge\n💬 *Health Chat* — ask anything\n\n📸 *2 free analyses + 10 free chats to start!*`,
     choose_lang: '🌐 Choose your language:',
     sex_q: 'Let me set up your profile.\n\n👤 Biological sex?',
     male: '♂️ Male', female: '♀️ Female',
@@ -106,9 +184,42 @@ const i18n = {
     lunch_tip: 'Balanced plate: protein + veggies + healthy carbs.',
     snack_tip: 'Handful of nuts, fruit, or protein bar.',
     dinner_tip: 'Lean protein + vegetables. Finish eating 3h before sleep.',
+    // Trial
+    try_pro_btn: '🎁 Try Pro FREE for 24h',
+    trial_activated: '🎉 *Pro trial activated!*\n\nYou have full access for 24 hours. Enjoy all features!\n\n⏰ Trial ends: ',
+    trial_expired: '⏰ *Your Pro trial has ended.*\n\nUpgrade to keep full access:\n👉 [Upgrade to Pro — $19/mo](CHECKOUT_URL)',
+    trial_already_used: '⚠️ You\'ve already used your free trial. Upgrade to Pro for full access!',
+    // Food Diary
+    food_diary_title: '📔 *Food Diary*',
+    food_diary_log: '📸 Log meal',
+    food_diary_summary: '📊 Today\'s summary',
+    food_diary_history: '📅 History',
+    food_diary_send_photo: '📸 Send a photo of your meal to log it.',
+    food_diary_logged: '✅ *Meal logged!*',
+    food_diary_no_entries: 'No meals logged today. Start by sending a food photo!',
+    food_diary_analyzing: '📸 Analyzing your meal for the diary...',
+    // Referral
+    referral_title: '🎁 *Invite a Friend*',
+    referral_text: 'Share your link — when a friend joins, you get *+7 days of Pro* for free!\n\nYour link:\n',
+    referral_friend_joined: '🎉 Your friend joined! *+7 days Pro* added!',
+    referral_stats: 'Friends invited',
+    referral_btn: '🎁 Invite friend',
+    // Detox
+    detox_title: '🧹 *7-Day Detox Program*',
+    detox_desc: 'A guided 7-day metabolic reset tailored to your profile.\n\n🗓 Day 1: Hydration\n🗓 Day 2: Sugar-free\n🗓 Day 3: Green day\n🗓 Day 4: Anti-inflammatory\n🗓 Day 5: Gut health\n🗓 Day 6: Antioxidants\n🗓 Day 7: Integration',
+    detox_start: '🚀 Start 7-day Detox',
+    detox_today_task: '📋 Today\'s task',
+    detox_complete_day: '✅ Complete day',
+    detox_started: '🧹 *Detox started!* Day 1: Hydration\n\nTap "📋 Today\'s task" to see your plan.',
+    detox_day_completed: '✅ *Day DAYNUM completed!* Great job!',
+    detox_all_done: '🎉 *Congratulations!* You completed the 7-day detox!',
+    detox_not_active: 'You don\'t have an active detox. Start one first!',
+    detox_pro_required: '🔒 *Days 3-7 require Pro.*\n\nUpgrade to continue your detox journey!\n👉 [Upgrade to Pro](CHECKOUT_URL)',
+    detox_generating: '🧹 Generating your detox plan...',
+    detox_status: 'Day CURRENT/7 — COMPLETED completed',
   },
   ru: {
-    welcome: `🧬 *Добро пожаловать в Metabolic Center*\n\nВаш AI-ассистент метаболического здоровья.\n\n🔬 *Анализ крови* — полный отчёт по фото\n📸 *Сканер еды* — фото блюда → калории и оценка\n🥗 *План питания* — персональное меню\n💊 *Протокол добавок* — подбор добавок\n📋 *Трекер симптомов* — отслеживание паттернов\n📄 *Расшифровка документов* — объяснение мед. документов\n💬 *Чат о здоровье* — любые вопросы\n\n📸 *2 бесплатных анализа + 10 чатов!*`,
+    welcome: `🧬 *Добро пожаловать в Metabolic Center*\n\nВаш AI-ассистент метаболического здоровья.\n\n🔬 *Анализ крови* — полный отчёт по фото\n📸 *Сканер еды* — фото блюда → калории и оценка\n🥗 *План питания* — персональное меню\n💊 *Протокол добавок* — подбор добавок\n📋 *Трекер симптомов* — отслеживание паттернов\n📄 *Расшифровка документов* — объяснение мед. документов\n📔 *Дневник питания* — учёт калорий и макросов\n🧹 *Детокс программа* — 7-дневный челлендж\n💬 *Чат о здоровье* — любые вопросы\n\n📸 *2 бесплатных анализа + 10 чатов!*`,
     choose_lang: '🌐 Выберите язык:',
     sex_q: 'Настроим ваш профиль.\n\n👤 Ваш пол?',
     male: '♂️ Мужской', female: '♀️ Женский',
@@ -163,12 +274,46 @@ const i18n = {
     lunch_tip: 'Сбалансированный обед: белок + овощи + сложные углеводы.',
     snack_tip: 'Перекус: орехи, фрукты или йогурт.',
     dinner_tip: 'Лёгкий ужин: белок + овощи. Не позже чем за 3ч до сна.',
+    // Trial
+    try_pro_btn: '🎁 Попробуйте Pro БЕСПЛАТНО на 24ч',
+    trial_activated: '🎉 *Пробный Pro активирован!*\n\nВам доступны все функции на 24 часа!\n\n⏰ Пробный период до: ',
+    trial_expired: '⏰ *Ваш пробный период Pro закончился.*\n\nОбновитесь для полного доступа:\n👉 [Перейти на Pro — $19/мес](CHECKOUT_URL)',
+    trial_already_used: '⚠️ Вы уже использовали пробный период. Оформите Pro для полного доступа!',
+    // Food Diary
+    food_diary_title: '📔 *Дневник питания*',
+    food_diary_log: '📸 Записать приём пищи',
+    food_diary_summary: '📊 Итоги за сегодня',
+    food_diary_history: '📅 История',
+    food_diary_send_photo: '📸 Отправьте фото блюда для записи.',
+    food_diary_logged: '✅ *Приём пищи записан!*',
+    food_diary_no_entries: 'Сегодня нет записей. Начните — отправьте фото еды!',
+    food_diary_analyzing: '📸 Анализирую блюдо для дневника...',
+    // Referral
+    referral_title: '🎁 *Пригласите друга*',
+    referral_text: 'Поделитесь ссылкой — когда друг присоединится, вы получите *+7 дней Pro* бесплатно!\n\nВаша ссылка:\n',
+    referral_friend_joined: '🎉 Ваш друг присоединился! *+7 дней Pro* добавлено!',
+    referral_stats: 'Приглашено друзей',
+    referral_btn: '🎁 Пригласить друга',
+    // Detox
+    detox_title: '🧹 *7-дневная Детокс Программа*',
+    detox_desc: 'Персональный 7-дневный метаболический сброс.\n\n🗓 День 1: Гидратация\n🗓 День 2: Без сахара\n🗓 День 3: Зелёный день\n🗓 День 4: Противовоспалительный\n🗓 День 5: Здоровье кишечника\n🗓 День 6: Антиоксиданты\n🗓 День 7: Интеграция',
+    detox_start: '🚀 Начать 7-дневный Детокс',
+    detox_today_task: '📋 Задание дня',
+    detox_complete_day: '✅ Завершить день',
+    detox_started: '🧹 *Детокс начат!* День 1: Гидратация\n\nНажмите "📋 Задание дня" чтобы увидеть план.',
+    detox_day_completed: '✅ *День DAYNUM завершён!* Отличная работа!',
+    detox_all_done: '🎉 *Поздравляем!* Вы завершили 7-дневный детокс!',
+    detox_not_active: 'У вас нет активного детокса. Начните сначала!',
+    detox_pro_required: '🔒 *Дни 3-7 доступны только в Pro.*\n\nОбновитесь чтобы продолжить детокс!\n👉 [Перейти на Pro](CHECKOUT_URL)',
+    detox_generating: '🧹 Создаю ваш план детокса...',
+    detox_status: 'День CURRENT/7 — COMPLETED завершено',
   }
 };
 
 function t(user, key, ...args) {
   const lang = user?.lang || 'en';
-  const val = i18n[lang]?.[key] || i18n.en[key] || key;
+  let val = i18n[lang]?.[key] || i18n.en[key] || key;
+  if (typeof val === 'string') val = val.replace(/CHECKOUT_URL/g, CHECKOUT_URL);
   return typeof val === 'function' ? val(...args) : val;
 }
 
@@ -342,9 +487,28 @@ Format the response clearly with emojis. Be encouraging but honest.
 At the end, add: "💡 Not accurate? Reply with the correct dish name and I'll recalculate."
 Do not respond in Spanish or any other language unless explicitly told.`;
 
+const FOOD_DIARY_PROMPT = `You are a food analysis AI. Analyze the food photo and respond ONLY with valid JSON (no markdown, no code blocks). Format:
+{"description":"brief meal description","calories":NUMBER,"protein":NUMBER,"carbs":NUMBER,"fat":NUMBER}
+Estimate as accurately as possible. Numbers only, no units in values.`;
+
 const DOC_PROMPT = `You are a medical document interpreter for Metabolic Center.
 Explain findings in simple language, highlight abnormalities, connect to metabolic health.
 End with: "AI interpretation. Discuss results with your doctor."`;
+
+const DETOX_PROMPT = `You are a detox program AI for Metabolic Center.
+Generate a detailed daily detox plan for the given day and theme.
+
+Include:
+1. 🌅 Morning routine (specific steps)
+2. 🥗 Meal plan for the day (breakfast, lunch, snack, dinner with portions)
+3. 💧 Hydration protocol
+4. 🏃 Movement/exercise recommendation
+5. 🧘 Mindfulness/relaxation tip
+6. ⚠️ What to avoid today
+7. 💡 Key tips for success
+
+Make it practical, specific, and encouraging. Tailor to user profile.
+Format with emojis and clear structure.`;
 
 // ─── Helpers ───
 function downloadFile(url) {
@@ -387,17 +551,26 @@ async function sendLong(ctx, text) {
 }
 
 function canUse(user, type) {
-  if (user.is_pro) return true;
+  if (isPro(user)) return true;
   if (type === 'analysis') return user.analysis_count < FREE_ANALYSIS_LIMIT;
   if (type === 'chat') return user.chat_count < FREE_CHAT_LIMIT;
   return true;
 }
 
-// ─── Menu ───
+function ensureReferralCode(user) {
+  if (!user.referral_code) {
+    user.referral_code = 'ref_' + user.id;
+    DB.updateUser(user);
+  }
+  return user.referral_code;
+}
+
+// ─── Menu (6 rows) ───
 const MENU_EN = [
   ['🔬 Analyze Blood Test', '📸 Scan Food'],
   ['🥗 Meal Plan', '💊 Supplement Protocol'],
   ['📋 Track Symptoms', '📄 Interpret Document'],
+  ['📔 Food Diary', '🧹 Detox Program'],
   ['⏰ Meal Reminders', '💬 Health Chat'],
   ['👤 My Profile', '⭐ Upgrade to Pro']
 ];
@@ -405,15 +578,14 @@ const MENU_RU = [
   ['🔬 Анализ крови', '📸 Сканер еды'],
   ['🥗 План питания', '💊 Протокол добавок'],
   ['📋 Симптомы', '📄 Расшифровка'],
+  ['📔 Дневник питания', '🧹 Детокс'],
   ['⏰ Напоминания', '💬 Чат со специалистом'],
   ['👤 Мой профиль', '⭐ Pro подписка']
 ];
-const MAIN_MENU = Markup.keyboard(MENU_EN).resize();
 function getMenu(user) {
   const rows = (user?.lang === 'ru') ? MENU_RU : MENU_EN;
   return Markup.keyboard(rows).resize();
 }
-// Map Russian menu buttons to English equivalents for handler matching
 const RU_TO_CMD = {
   '🔬 Анализ крови': '🔬 Analyze Blood Test',
   '📸 Сканер еды': '📸 Scan Food',
@@ -424,30 +596,39 @@ const RU_TO_CMD = {
   '⏰ Напоминания': '⏰ Meal Reminders',
   '💬 Чат со специалистом': '💬 Health Chat',
   '👤 Мой профиль': '👤 My Profile',
-  '⭐ Pro подписка': '⭐ Upgrade to Pro'
+  '⭐ Pro подписка': '⭐ Upgrade to Pro',
+  '📔 Дневник питания': '📔 Food Diary',
+  '🧹 Детокс': '🧹 Detox Program',
 };
-
-const WELCOME = `🧬 *Welcome to Metabolic Center*
-
-Your AI Metabolic Intelligence assistant.
-
-🔬 *Analyze Blood Tests* — full metabolic report from a photo
-📸 *Scan Food* — photo your meal, get calories & metabolic score
-🥗 *Meal Plan* — personalized nutrition
-💊 *Supplement Protocol* — evidence-based stack
-📋 *Track Symptoms* — detect patterns
-📄 *Interpret Documents* — explain any medical doc
-💬 *Health Chat* — ask anything
-
-📸 *2 free analyses + 10 free chats to start!*`;
 
 // ─── Commands ───
 bot.start(async (ctx) => {
+  const startPayload = ctx.startPayload || '';
   const user = DB.ensureUser(ctx.from.id, ctx.from.username, ctx.from.first_name);
   const session = getSession(ctx.from.id);
+  DB.logEvent(ctx.from.id, 'START', `@${ctx.from.username || ''} ${ctx.from.first_name || ''} payload=${startPayload}`);
+
+  // Handle referral
+  if (startPayload.startsWith('ref_')) {
+    const referrerCode = startPayload;
+    const referrer = DB.getUserByReferral(referrerCode);
+    if (referrer && referrer.id !== ctx.from.id && !user.referred_by) {
+      user.referred_by = referrer.id;
+      DB.updateUser(user);
+      // Give referrer +7 days Pro
+      const now = Date.now();
+      const currentExpiry = (referrer.trial_expires && referrer.trial_expires > now) ? referrer.trial_expires : now;
+      referrer.trial_expires = currentExpiry + 7 * 24 * 60 * 60 * 1000;
+      referrer.is_pro = 1;
+      DB.updateUser(referrer);
+      DB.logEvent(referrer.id, 'REFERRAL_BONUS', `from user ${ctx.from.id}`);
+      const rRu = referrer.lang === 'ru';
+      bot.telegram.sendMessage(referrer.id, t(referrer, 'referral_friend_joined'), { parse_mode: 'Markdown' }).catch(() => {});
+    }
+  }
+
   session.step = 'lang';
-  DB.logEvent(ctx.from.id, 'START', `@${ctx.from.username || ''} ${ctx.from.first_name || ''}`);
-  
+
   // Auto-detect language from Telegram
   const tgLang = ctx.from.language_code || '';
   if (tgLang.startsWith('ru')) {
@@ -483,7 +664,6 @@ bot.command('activate', async (ctx) => {
   await ctx.reply(`✅ User ${targetId} activated as Pro.`);
 });
 
-// Admin: deactivate Pro
 bot.command('deactivate', async (ctx) => {
   if (ctx.from.id !== ADMIN_ID) return;
   const args = ctx.message.text.split(' ');
@@ -509,6 +689,15 @@ bot.command('reminders', async (ctx) => {
   }
   const schedule = r.map(m => `⏰ ${m.localTime} — ${m.meal}: ${m.text}`).join('\n');
   await ctx.reply(`🍽 *Your reminders:*\n\n${schedule}\n\nTurn off: /reminders_off`, { parse_mode: 'Markdown' });
+});
+
+bot.command('referral', async (ctx) => {
+  const user = DB.ensureUser(ctx.from.id, ctx.from.username, ctx.from.first_name);
+  const code = ensureReferralCode(user);
+  const link = `https://t.me/${BOT_USERNAME}?start=${code}`;
+  const count = DB.countReferrals(user.id);
+  const ru = user.lang === 'ru';
+  await ctx.replyWithMarkdown(`${t(user, 'referral_title')}\n\n${t(user, 'referral_text')}${link}\n\n👥 ${t(user, 'referral_stats')}: ${count}`);
 });
 
 bot.command('stats', async (ctx) => {
@@ -537,10 +726,14 @@ bot.on('callback_query', async (ctx) => {
   const session = getSession(ctx.from.id);
   const data = ctx.callbackQuery.data;
 
+  // Check trial expiry on every callback
+  if (checkTrialExpiry(user)) {
+    await bot.telegram.sendMessage(ctx.from.id, t(user, 'trial_expired'), { parse_mode: 'Markdown' }).catch(() => {});
+  }
+
   if (data.startsWith('lang_')) {
     user.lang = data.replace('lang_', '');
     DB.updateUser(user);
-    const session = getSession(ctx.from.id);
     session.step = 'gender';
     await ctx.answerCbQuery();
     await ctx.editMessageText(`✅ ${user.lang === 'ru' ? 'Русский' : 'English'}`);
@@ -641,7 +834,7 @@ bot.on('callback_query', async (ctx) => {
     };
 
     const meals = schedules[data] || schedules.sched_standard;
-    
+
     reminders[ctx.from.id] = meals.map(m => {
       const [h, min] = m.localTime.split(':').map(Number);
       const utcH = ((h - offset) + 24) % 24;
@@ -710,7 +903,6 @@ bot.on('callback_query', async (ctx) => {
       ]}});
       return;
     }
-    // Toggle selection
     const dietLabels = { diet_vegetarian: 'Vegetarian', diet_vegan: 'Vegan', diet_gf: 'Gluten-free', diet_lf: 'Lactose-free', diet_halal: 'Halal', diet_keto: 'Keto' };
     const label = dietLabels[data];
     if (label) {
@@ -746,8 +938,8 @@ bot.on('callback_query', async (ctx) => {
     await ctx.answerCbQuery();
     await ctx.reply(t(user, 'meal_plan_gen'));
 
-    const prompt = user.is_pro ? MEAL_PLAN_PROMPT_PRO : MEAL_PLAN_PROMPT_1DAY;
-    const maxTok = user.is_pro ? 8000 : 3000;
+    const prompt = isPro(user) ? MEAL_PLAN_PROMPT_PRO : MEAL_PLAN_PROMPT_1DAY;
+    const maxTok = isPro(user) ? 8000 : 3000;
     const extra = data === 'meal_reroll' ? ' Generate DIFFERENT dishes from the previous plan.' : '';
 
     try {
@@ -792,7 +984,196 @@ bot.on('callback_query', async (ctx) => {
     await ctx.answerCbQuery();
     const label = user.lang === 'ru' ? goalsRu[data] : goals[data];
     await ctx.editMessageText(`✅ ${label}`);
+
+    // Ensure referral code
+    ensureReferralCode(user);
+
+    // Profile done — offer trial if never used
     await ctx.reply(t(user, 'profile_done'), getMenu(user));
+    if (!user.trial_used && !user.is_pro) {
+      const ru = user.lang === 'ru';
+      await ctx.reply(ru ? '🎁 Хотите попробовать все функции бесплатно?' : '🎁 Want to try all features for free?', {
+        reply_markup: { inline_keyboard: [
+          [{ text: t(user, 'try_pro_btn'), callback_data: 'activate_trial' }]
+        ]}
+      });
+    }
+  }
+
+  // ─── Trial activation ───
+  if (data === 'activate_trial') {
+    await ctx.answerCbQuery();
+    if (user.trial_used) {
+      await ctx.editMessageText(t(user, 'trial_already_used'));
+      return;
+    }
+    user.is_pro = 1;
+    user.trial_expires = Date.now() + 24 * 60 * 60 * 1000;
+    user.trial_used = 1;
+    DB.updateUser(user);
+    DB.logEvent(ctx.from.id, 'TRIAL_ACTIVATED', '24h');
+    const expiry = new Date(user.trial_expires).toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
+    await ctx.editMessageText(t(user, 'trial_activated') + expiry, { parse_mode: 'Markdown' });
+    return;
+  }
+
+  // ─── Food Diary callbacks ───
+  if (data === 'food_diary_log') {
+    session.awaitingImage = 'food_diary';
+    await ctx.answerCbQuery();
+    await ctx.reply(t(user, 'food_diary_send_photo'));
+    return;
+  }
+
+  if (data === 'food_diary_summary') {
+    await ctx.answerCbQuery();
+    const entries = DB.getTodayFood(ctx.from.id);
+    if (!entries.length) {
+      await ctx.reply(t(user, 'food_diary_no_entries'));
+      return;
+    }
+    const totals = { calories: 0, protein: 0, carbs: 0, fat: 0 };
+    const items = [];
+    for (const e of entries) {
+      totals.calories += e.calories || 0;
+      totals.protein += e.protein || 0;
+      totals.carbs += e.carbs || 0;
+      totals.fat += e.fat || 0;
+      items.push(`• ${e.description} — ${e.calories} kcal`);
+    }
+    const ru = user.lang === 'ru';
+    const msg = `📊 *${ru ? 'Итоги за сегодня' : 'Today\'s Summary'}*\n\n${items.join('\n')}\n\n━━━━━━━━━━━━━━━━━━━━━\n🔥 ${ru ? 'Калории' : 'Calories'}: ${totals.calories} kcal\n🥩 ${ru ? 'Белки' : 'Protein'}: ${totals.protein.toFixed(1)}g\n🍞 ${ru ? 'Углеводы' : 'Carbs'}: ${totals.carbs.toFixed(1)}g\n🧈 ${ru ? 'Жиры' : 'Fat'}: ${totals.fat.toFixed(1)}g`;
+    await ctx.replyWithMarkdown(msg);
+    return;
+  }
+
+  if (data === 'food_diary_history') {
+    await ctx.answerCbQuery();
+    const entries = DB.getRecentFood(ctx.from.id);
+    if (!entries.length) {
+      await ctx.reply(t(user, 'food_diary_no_entries'));
+      return;
+    }
+    const ru = user.lang === 'ru';
+    // Group by date
+    const byDate = {};
+    for (const e of entries) {
+      const date = (e.created_at || '').slice(0, 10);
+      if (!byDate[date]) byDate[date] = { entries: [], calories: 0 };
+      byDate[date].entries.push(e);
+      byDate[date].calories += e.calories || 0;
+    }
+    let msg = `📅 *${ru ? 'История питания' : 'Food History'}*\n\n`;
+    for (const [date, data] of Object.entries(byDate)) {
+      msg += `*${date}* — ${data.calories} kcal (${data.entries.length} ${ru ? 'приёмов' : 'meals'})\n`;
+      for (const e of data.entries) {
+        msg += `  • ${e.description} — ${e.calories} kcal\n`;
+      }
+      msg += '\n';
+    }
+    await sendLong(ctx, msg);
+    return;
+  }
+
+  // ─── Detox callbacks ───
+  if (data === 'detox_start') {
+    await ctx.answerCbQuery();
+    DB.startDetox(ctx.from.id);
+    DB.logEvent(ctx.from.id, 'DETOX_STARTED', '');
+    await ctx.editMessageText(t(user, 'detox_started'), { parse_mode: 'Markdown' });
+    // Show action buttons
+    const ru = user.lang === 'ru';
+    await ctx.reply(ru ? '👇 Что дальше?' : '👇 What\'s next?', { reply_markup: { inline_keyboard: [
+      [{ text: t(user, 'detox_today_task'), callback_data: 'detox_task' }],
+      [{ text: t(user, 'detox_complete_day'), callback_data: 'detox_complete' }]
+    ]}});
+    return;
+  }
+
+  if (data === 'detox_task') {
+    await ctx.answerCbQuery();
+    const detox = DB.getDetox(ctx.from.id);
+    if (!detox) {
+      await ctx.reply(t(user, 'detox_not_active'));
+      return;
+    }
+    const completedArr = detox.completed_days ? detox.completed_days.split(',').filter(Boolean) : [];
+    const currentDay = completedArr.length + 1;
+    if (currentDay > 7) {
+      await ctx.reply(t(user, 'detox_all_done'));
+      return;
+    }
+    // Paywall: day 3+ requires Pro
+    if (currentDay >= 3 && !isPro(user)) {
+      await ctx.replyWithMarkdown(t(user, 'detox_pro_required'));
+      return;
+    }
+    const themes = ['Hydration', 'Sugar-free', 'Green day', 'Anti-inflammatory', 'Gut health', 'Antioxidants', 'Integration'];
+    const theme = themes[currentDay - 1];
+    await ctx.reply(t(user, 'detox_generating'));
+    try {
+      const r = await openai.chat.completions.create({
+        model: 'gpt-4o', max_tokens: 2000,
+        messages: [
+          { role: 'system', content: DETOX_PROMPT },
+          { role: 'user', content: `Day ${currentDay} of 7-day detox. Theme: ${theme}.${profileContext(user)}` }
+        ]
+      });
+      await sendLong(ctx, r.choices[0].message.content);
+      const ru = user.lang === 'ru';
+      await ctx.reply(ru ? '👇 Когда выполните:' : '👇 When you\'re done:', { reply_markup: { inline_keyboard: [
+        [{ text: t(user, 'detox_complete_day'), callback_data: 'detox_complete' }]
+      ]}});
+    } catch (e) {
+      console.error('Detox error:', e?.message);
+      await ctx.reply(t(user, 'error'));
+    }
+    return;
+  }
+
+  if (data === 'detox_complete') {
+    await ctx.answerCbQuery();
+    const detox = DB.getDetox(ctx.from.id);
+    if (!detox) {
+      await ctx.reply(t(user, 'detox_not_active'));
+      return;
+    }
+    const completedArr = detox.completed_days ? detox.completed_days.split(',').filter(Boolean) : [];
+    const currentDay = completedArr.length + 1;
+    if (currentDay > 7) {
+      await ctx.reply(t(user, 'detox_all_done'));
+      return;
+    }
+    completedArr.push(String(currentDay));
+    DB.updateDetox(ctx.from.id, currentDay, completedArr.join(','));
+    DB.logEvent(ctx.from.id, 'DETOX_DAY_COMPLETE', `day ${currentDay}`);
+
+    if (currentDay >= 7) {
+      await ctx.replyWithMarkdown(t(user, 'detox_all_done'));
+    } else {
+      const msg = t(user, 'detox_day_completed').replace('DAYNUM', currentDay);
+      await ctx.replyWithMarkdown(msg);
+      const ru = user.lang === 'ru';
+      const nextDay = currentDay + 1;
+      if (nextDay >= 3 && !isPro(user)) {
+        await ctx.replyWithMarkdown(t(user, 'detox_pro_required'));
+      } else {
+        await ctx.reply(ru ? `🗓 Завтра День ${nextDay}!` : `🗓 Tomorrow is Day ${nextDay}!`, { reply_markup: { inline_keyboard: [
+          [{ text: t(user, 'detox_today_task'), callback_data: 'detox_task' }]
+        ]}});
+      }
+    }
+    return;
+  }
+
+  // ─── Referral callback ───
+  if (data === 'referral_show') {
+    await ctx.answerCbQuery();
+    const code = ensureReferralCode(user);
+    const link = `https://t.me/${BOT_USERNAME}?start=${code}`;
+    const count = DB.countReferrals(user.id);
+    await ctx.replyWithMarkdown(`${t(user, 'referral_title')}\n\n${t(user, 'referral_text')}${link}\n\n👥 ${t(user, 'referral_stats')}: ${count}`);
+    return;
   }
 });
 
@@ -801,10 +1182,72 @@ bot.on('photo', async (ctx) => {
   const user = DB.ensureUser(ctx.from.id, ctx.from.username, ctx.from.first_name);
   const session = getSession(ctx.from.id);
 
-  if (!canUse(user, 'analysis')) { await ctx.replyWithMarkdown(UPGRADE_MSG); return; }
+  // Check trial
+  if (checkTrialExpiry(user)) {
+    await ctx.replyWithMarkdown(t(user, 'trial_expired'));
+  }
 
   const mode = session.awaitingImage || 'analysis';
   session.awaitingImage = null;
+
+  // Food diary mode — special handling
+  if (mode === 'food_diary') {
+    await ctx.reply(t(user, 'food_diary_analyzing'));
+    try {
+      const photos = ctx.message.photo;
+      const base64 = await getImageBase64(ctx, photos[photos.length - 1].file_id);
+      const caption = ctx.message.caption || '';
+
+      // First get structured data for DB
+      const jsonResponse = await openai.chat.completions.create({
+        model: 'gpt-4o', max_tokens: 300,
+        messages: [
+          { role: 'system', content: FOOD_DIARY_PROMPT },
+          { role: 'user', content: [
+            { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${base64}`, detail: 'low' } },
+            { type: 'text', text: caption || 'Analyze this meal.' }
+          ]}
+        ]
+      });
+
+      let parsed;
+      try {
+        let raw = jsonResponse.choices[0].message.content.trim();
+        // Strip markdown code blocks if present
+        raw = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
+        parsed = JSON.parse(raw);
+      } catch (e) {
+        parsed = { description: 'Meal', calories: 0, protein: 0, carbs: 0, fat: 0 };
+      }
+
+      DB.addFoodEntry(ctx.from.id, parsed.description, parsed.calories || 0, parsed.protein || 0, parsed.carbs || 0, parsed.fat || 0);
+      DB.logEvent(ctx.from.id, 'FOOD_DIARY', parsed.description);
+
+      const ru = user.lang === 'ru';
+      const msg = `${t(user, 'food_diary_logged')}\n\n🍽 *${parsed.description}*\n🔥 ${parsed.calories} kcal\n🥩 ${ru ? 'Б' : 'P'}: ${parsed.protein}g | 🍞 ${ru ? 'У' : 'C'}: ${parsed.carbs}g | 🧈 ${ru ? 'Ж' : 'F'}: ${parsed.fat}g`;
+      await ctx.replyWithMarkdown(msg);
+
+      // Also do full food analysis
+      const fullResponse = await openai.chat.completions.create({
+        model: 'gpt-4o', max_tokens: 2000,
+        messages: [
+          { role: 'system', content: FOOD_PROMPT },
+          { role: 'user', content: [
+            { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${base64}`, detail: 'high' } },
+            { type: 'text', text: `${caption || 'Analyze this meal.'}${profileContext(user)}` }
+          ]}
+        ]
+      });
+      await sendLong(ctx, fullResponse.choices[0].message.content);
+    } catch (e) {
+      console.error('Food diary error:', e?.message);
+      await ctx.reply(t(user, 'error'));
+    }
+    return;
+  }
+
+  if (!canUse(user, 'analysis')) { await ctx.replyWithMarkdown(UPGRADE_MSG); return; }
+
   const prompts = { document: DOC_PROMPT, food: FOOD_PROMPT, analysis: ANALYSIS_PROMPT };
   const prompt = prompts[mode] || ANALYSIS_PROMPT;
 
@@ -833,7 +1276,7 @@ bot.on('photo', async (ctx) => {
     await sendLong(ctx, response.choices[0].message.content);
 
     const rem = FREE_ANALYSIS_LIMIT - user.analysis_count;
-    if (!user.is_pro) {
+    if (!isPro(user)) {
       if (rem > 0) await ctx.reply(`📊 Free analyses remaining: ${rem}/${FREE_ANALYSIS_LIMIT}`);
       else await ctx.replyWithMarkdown(`📊 Last free analysis used.\n👉 [Upgrade — $19/mo](${CHECKOUT_URL})`);
     }
@@ -882,6 +1325,11 @@ bot.on('text', async (ctx) => {
   const rawText = ctx.message.text.trim();
   const text = RU_TO_CMD[rawText] || rawText;
 
+  // Check trial on every text
+  if (checkTrialExpiry(user)) {
+    await ctx.replyWithMarkdown(t(user, 'trial_expired'));
+  }
+
   // Onboarding: age
   if (session.step === 'age') {
     const age = parseInt(text);
@@ -896,7 +1344,6 @@ bot.on('text', async (ctx) => {
     return;
   }
 
-  // Onboarding: height
   if (session.step === 'height') {
     const h = parseInt(text);
     if (h > 50 && h < 300) {
@@ -910,7 +1357,6 @@ bot.on('text', async (ctx) => {
     return;
   }
 
-  // Onboarding: weight
   if (session.step === 'weight') {
     const w = parseFloat(text);
     if (w > 20 && w < 500) {
@@ -955,7 +1401,7 @@ bot.on('text', async (ctx) => {
     return;
   }
 
-  // ─── Menu ───
+  // ─── Menu handlers ───
   if (text === '🔬 Analyze Blood Test') {
     session.awaitingImage = 'analysis';
     await ctx.reply(t(user, 'send_blood'));
@@ -999,7 +1445,6 @@ bot.on('text', async (ctx) => {
   }
   if (text === '⏰ Meal Reminders') {
     const ru = user.lang === 'ru';
-    // Check if already has reminders
     if (reminders[ctx.from.id] && reminders[ctx.from.id].length > 0) {
       const r = reminders[ctx.from.id];
       const mealRu = { Breakfast: 'Завтрак', Lunch: 'Обед', Dinner: 'Ужин', Snack: 'Перекус' };
@@ -1032,8 +1477,55 @@ bot.on('text', async (ctx) => {
     await ctx.reply(t(user, 'chat_ask'));
     return;
   }
+
+  // ─── Food Diary menu ───
+  if (text === '📔 Food Diary') {
+    const ru = user.lang === 'ru';
+    await ctx.reply(t(user, 'food_diary_title'), {
+      parse_mode: 'Markdown',
+      reply_markup: { inline_keyboard: [
+        [{ text: t(user, 'food_diary_log'), callback_data: 'food_diary_log' }],
+        [{ text: t(user, 'food_diary_summary'), callback_data: 'food_diary_summary' }],
+        [{ text: t(user, 'food_diary_history'), callback_data: 'food_diary_history' }]
+      ]}
+    });
+    return;
+  }
+
+  // ─── Detox Program menu ───
+  if (text === '🧹 Detox Program') {
+    const ru = user.lang === 'ru';
+    const detox = DB.getDetox(ctx.from.id);
+    if (detox) {
+      const completedArr = detox.completed_days ? detox.completed_days.split(',').filter(Boolean) : [];
+      const currentDay = Math.min(completedArr.length + 1, 7);
+      const status = t(user, 'detox_status').replace('CURRENT', currentDay).replace('COMPLETED', completedArr.length);
+      await ctx.reply(`${t(user, 'detox_title')}\n\n📊 ${status}`, {
+        parse_mode: 'Markdown',
+        reply_markup: { inline_keyboard: [
+          [{ text: t(user, 'detox_today_task'), callback_data: 'detox_task' }],
+          [{ text: t(user, 'detox_complete_day'), callback_data: 'detox_complete' }],
+          [{ text: ru ? '🔄 Начать заново' : '🔄 Restart', callback_data: 'detox_start' }]
+        ]}
+      });
+    } else {
+      await ctx.reply(`${t(user, 'detox_title')}\n\n${t(user, 'detox_desc')}\n\n${!isPro(user) ? (ru ? '_Дни 1-2 бесплатно, полная программа — Pro_' : '_Days 1-2 free, full program — Pro_') : ''}`, {
+        parse_mode: 'Markdown',
+        reply_markup: { inline_keyboard: [
+          [{ text: t(user, 'detox_start'), callback_data: 'detox_start' }]
+        ]}
+      });
+    }
+    return;
+  }
+
   if (text === '👤 My Profile') {
     const ru = user.lang === 'ru';
+    const refCount = DB.countReferrals(user.id);
+    const code = ensureReferralCode(user);
+    const trialInfo = user.trial_expires && user.trial_expires > Date.now()
+      ? `\n⏰ ${ru ? 'Пробный до' : 'Trial until'}: ${new Date(user.trial_expires).toISOString().slice(0, 16).replace('T', ' ')} UTC`
+      : '';
     await ctx.replyWithMarkdown([
       `👤 *${ru ? 'Ваш профиль' : 'Your Profile'}*`,
       `${ru ? 'Пол' : 'Sex'}: ${user.gender || (ru ? 'Не указан' : 'Not set')}`,
@@ -1045,10 +1537,17 @@ bot.on('text', async (ctx) => {
       `${ru ? 'Ограничения' : 'Diet'}: ${user.diet_restrictions || (ru ? 'Нет' : 'None')}`,
       `${ru ? 'Цель' : 'Goal'}: ${user.goal || (ru ? 'Не указана' : 'Not set')}`,
       `\n📊 *${ru ? 'Использование' : 'Usage'}*`,
-      `${ru ? 'Анализы' : 'Analyses'}: ${user.analysis_count}/${user.is_pro ? '∞' : FREE_ANALYSIS_LIMIT}`,
-      `${ru ? 'Чаты' : 'Chats'}: ${user.chat_count}/${user.is_pro ? '∞' : FREE_CHAT_LIMIT}`,
-      `\n${user.is_pro ? `⭐ *${ru ? 'Pro участник' : 'Pro Member'}*` : `[${ru ? 'Перейти на Pro' : 'Upgrade to Pro'}](${CHECKOUT_URL})`}`
+      `${ru ? 'Анализы' : 'Analyses'}: ${user.analysis_count}/${isPro(user) ? '∞' : FREE_ANALYSIS_LIMIT}`,
+      `${ru ? 'Чаты' : 'Chats'}: ${user.chat_count}/${isPro(user) ? '∞' : FREE_CHAT_LIMIT}`,
+      `\n👥 ${t(user, 'referral_stats')}: ${refCount}`,
+      trialInfo,
+      `\n${isPro(user) ? `⭐ *${ru ? 'Pro участник' : 'Pro Member'}*` : `[${ru ? 'Перейти на Pro' : 'Upgrade to Pro'}](${CHECKOUT_URL})`}`
     ].filter(Boolean).join('\n'));
+
+    // Show referral button under profile
+    await ctx.reply(ru ? '👇 Действия:' : '👇 Actions:', { reply_markup: { inline_keyboard: [
+      [{ text: t(user, 'referral_btn'), callback_data: 'referral_show' }]
+    ]}});
     return;
   }
   if (text === '⭐ Upgrade to Pro') {
@@ -1068,7 +1567,7 @@ bot.on('text', async (ctx) => {
     if (session.history.length > 6) session.history = session.history.slice(-6);
     const r = await openai.chat.completions.create({
       model: 'gpt-4o', max_tokens: 1500,
-      messages: [{ role: 'system', content: CHAT_PROMPT + (user.is_pro ? '' : '\nUser is on FREE plan. Limit meal/diet plans to 1 day only. Always end meal plans with: "🔒 *Full 7-day plan + shopping list → Pro*"') + profileContext(user) }, ...session.history]
+      messages: [{ role: 'system', content: CHAT_PROMPT + (isPro(user) ? '' : '\nUser is on FREE plan. Limit meal/diet plans to 1 day only. Always end meal plans with: "🔒 *Full 7-day plan + shopping list → Pro*"') + profileContext(user) }, ...session.history]
     });
     const reply = r.choices[0].message.content;
     session.history.push({ role: 'assistant', content: reply });
@@ -1089,7 +1588,6 @@ const server = http.createServer((req, res) => {
     req.on('data', c => body += c);
     req.on('end', () => {
       try {
-        // Verify signature if secret is set
         if (WEBHOOK_SECRET) {
           const sig = req.headers['x-signature'] || '';
           const hmac = crypto.createHmac('sha256', WEBHOOK_SECRET).update(body).digest('hex');
@@ -1110,21 +1608,19 @@ const server = http.createServer((req, res) => {
         console.log(`Webhook: ${eventName} | email: ${email} | tg: ${telegramId}`);
         DB.logEvent(telegramId || 0, 'WEBHOOK', `${eventName} | ${email}`);
 
-        // Activate Pro on subscription created
         if (eventName === 'subscription_created' || eventName === 'order_created') {
           if (telegramId) {
             const user = DB.getUser(parseInt(telegramId));
             if (user) {
               user.is_pro = 1;
+              user.trial_expires = 0; // Clear trial on real subscription
               DB.updateUser(user);
               DB.logEvent(telegramId, 'PRO_ACTIVATED', email);
-              // Notify user
               bot.telegram.sendMessage(telegramId, '🎉 *Welcome to Metabolic Center Pro!*\n\nYou now have unlimited access to all features. Enjoy!', { parse_mode: 'Markdown' }).catch(console.error);
             }
           }
         }
 
-        // Deactivate on subscription expired/cancelled
         if (eventName === 'subscription_expired' || eventName === 'subscription_cancelled') {
           if (telegramId) {
             const user = DB.getUser(parseInt(telegramId));
@@ -1160,7 +1656,9 @@ bot.catch((err) => console.error('Bot error:', err));
 bot.launch().then(() => {
   console.log('🧬 Metabolic Center Bot is running!');
   startReminderLoop();
-  console.log('⏰ Reminder loop started');
+  startDailySummaryLoop();
+  startDetoxReminderLoop();
+  console.log('⏰ All loops started (reminders, food diary summary, detox reminders)');
 });
 process.once('SIGINT', () => { bot.stop('SIGINT'); server.close(); });
 process.once('SIGTERM', () => { bot.stop('SIGTERM'); server.close(); });
