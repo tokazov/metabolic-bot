@@ -473,13 +473,16 @@ function stripMarkdown(text) {
   return text.replace(/[*_`~\[\]()#>]/g, '').replace(/\n{3,}/g, '\n\n');
 }
 
+// Separate OpenAI client for TTS (main client may point to Gemini)
+const ttsClient = process.env.OPENAI_KEY ? new OpenAI({ apiKey: process.env.OPENAI_KEY }) : null;
+
 async function textToVoice(chatId, text) {
-  if (process.env.GEMINI_KEY) return; // TTS not supported with Gemini
+  if (!ttsClient) return;
   const clean = stripMarkdown(text).slice(0, 4000);
   if (!clean.trim()) return;
   let tmpPath;
   try {
-    const speech = await openai.audio.speech.create({
+    const speech = await ttsClient.audio.speech.create({
       model: 'tts-1', voice: 'nova', input: clean, response_format: 'opus',
     });
     const buffer = Buffer.from(await speech.arrayBuffer());
@@ -493,7 +496,9 @@ async function textToVoice(chatId, text) {
   }
 }
 
-function ttsButton(msgId) {
+const _ttsCache = {};
+function ttsButton(msgId, text) {
+  if (text) _ttsCache[msgId] = stripMarkdown(text).slice(0, 4000);
   return { reply_markup: { inline_keyboard: [[{ text: '🔊 Озвучить', callback_data: `tts_${msgId}` }]] } };
 }
 
@@ -661,8 +666,9 @@ bot.on('callback_query', async (ctx) => {
   // TTS callback
   if (data.startsWith('tts_')) {
     await ctx.answerCbQuery('🔊 Генерирую голос...');
-    const text = ctx.callbackQuery.message?.text || '';
-    if (text) await textToVoice(ctx.chat.id, text);
+    const msgId = data.split('_')[1];
+    const text = _ttsCache[msgId] || ctx.callbackQuery.message?.text || '';
+    if (text && text.trim() !== '⬆️') await textToVoice(ctx.chat.id, text);
     return;
   }
 
@@ -891,8 +897,9 @@ bot.on('callback_query', async (ctx) => {
         model: AI_MODEL, max_tokens: maxTok,
         messages: [{ role: 'system', content: prompt }, { role: 'user', content: `${plan.en} meal plan. Style: ${plan.hint}.${extra}${profileContext(user)}` }]
       });
-      const sentPlan = await sendLong(ctx, r.choices[0].message.content);
-      if (sentPlan) await ctx.reply('⬆️', ttsButton(sentPlan.message_id)).catch(() => {});
+      const planContent = r.choices[0].message.content;
+      const sentPlan = await sendLong(ctx, planContent);
+      if (sentPlan) await ctx.reply('⬆️', ttsButton(sentPlan.message_id, planContent || '')).catch(() => {});
       await ctx.reply(t(user, 'what_next'), { reply_markup: { inline_keyboard: [
         [{ text: t(user, 'another_variant'), callback_data: 'meal_reroll' }],
         [{ text: t(user, 'choose_diff_type'), callback_data: 'mp_menu' }]
@@ -1498,7 +1505,7 @@ bot.on('text', async (ctx) => {
     const reply = r.choices[0].message.content;
     session.history.push({ role: 'assistant', content: reply });
     const sent = await sendLong(ctx, reply);
-    if (sent) await ctx.reply('⬆️', ttsButton(sent.message_id)).catch(() => {});
+    if (sent) await ctx.reply('⬆️', ttsButton(sent.message_id, sent.text || '')).catch(() => {});
   } catch (e) {
     console.error('Chat error:', e?.message);
     await ctx.reply('❌ Error. Try again.');
