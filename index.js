@@ -172,7 +172,13 @@ async function sendUpgradeInvoice(ctx, user) {
     ? 'Pro на 7 дней:\n• Безлимитный анализ крови\n• Персональные планы питания\n• AI чат по здоровью\n• Трекинг симптомов'
     : 'Pro for 7 days:\n• Unlimited blood analysis\n• Personal meal plans\n• AI health chat\n• Symptom tracking';
   try {
-    await ctx.replyWithInvoice(title, desc, `pro_7d_${ctx.from.id}`, 'XTR', [{ label: 'Pro 7 days', amount: STARS_PRICE_7D }]);
+    await ctx.replyWithInvoice({
+      title,
+      description: desc,
+      payload: `pro_7d_${ctx.from.id}`,
+      currency: 'XTR',
+      prices: [{ label: 'Pro 7 days', amount: STARS_PRICE_7D }]
+    });
   } catch(e) {
     console.error('Invoice error:', e);
     await ctx.reply(t(user, 'error') || '❌ Error sending invoice. Try again later.');
