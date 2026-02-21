@@ -458,15 +458,18 @@ function profileContext(user) {
   return s + '.';
 }
 
-async function sendLong(ctx, text) {
+async function sendLong(ctx, text, { showTts = true } = {}) {
+  let lastMsg;
   if (text.length > 4000) {
     const parts = text.match(/[\s\S]{1,4000}/g);
-    let lastMsg;
     for (const p of parts) lastMsg = await ctx.replyWithMarkdown(p).catch(() => ctx.reply(p));
-    return lastMsg;
   } else {
-    return await ctx.replyWithMarkdown(text).catch(() => ctx.reply(text));
+    lastMsg = await ctx.replyWithMarkdown(text).catch(() => ctx.reply(text));
   }
+  if (showTts && lastMsg) {
+    await ctx.reply('⬆️', ttsButton(lastMsg.message_id, lastMsg.text || text)).catch(() => {});
+  }
+  return lastMsg;
 }
 
 function stripMarkdown(text) {
@@ -899,7 +902,6 @@ bot.on('callback_query', async (ctx) => {
       });
       const planContent = r.choices[0].message.content;
       const sentPlan = await sendLong(ctx, planContent);
-      if (sentPlan) await ctx.reply('⬆️', ttsButton(sentPlan.message_id, planContent || '')).catch(() => {});
       await ctx.reply(t(user, 'what_next'), { reply_markup: { inline_keyboard: [
         [{ text: t(user, 'another_variant'), callback_data: 'meal_reroll' }],
         [{ text: t(user, 'choose_diff_type'), callback_data: 'mp_menu' }]
@@ -1505,7 +1507,6 @@ bot.on('text', async (ctx) => {
     const reply = r.choices[0].message.content;
     session.history.push({ role: 'assistant', content: reply });
     const sent = await sendLong(ctx, reply);
-    if (sent) await ctx.reply('⬆️', ttsButton(sent.message_id, sent.text || '')).catch(() => {});
   } catch (e) {
     console.error('Chat error:', e?.message);
     await ctx.reply('❌ Error. Try again.');
