@@ -175,7 +175,7 @@ async function sendUpgradeInvoice(ctx, user) {
     await ctx.replyWithInvoice(title, desc, `pro_7d_${ctx.from.id}`, 'XTR', [{ label: 'Pro 7 days', amount: STARS_PRICE_7D }]);
   } catch(e) {
     console.error('Invoice error:', e);
-    await sendUpgradeInvoice(ctx, user);
+    await ctx.reply(t(user, 'error') || '❌ Error sending invoice. Try again later.');
   }
 }
 
@@ -1453,6 +1453,11 @@ bot.on('text', async (ctx) => {
         ]}
       });
     }
+    return;
+  }
+
+  if (text === '⭐ Upgrade to Pro') {
+    await sendUpgradeInvoice(ctx, user);
     return;
   }
 
