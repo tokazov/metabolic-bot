@@ -1477,7 +1477,7 @@ bot.on('text', async (ctx) => {
     ]}});
     return;
   }
-  if (text === '⭐ Upgrade to Pro') {
+  if (text.includes('Pro') && text.includes('⭐')) {
     DB.logEvent(ctx.from.id, 'UPGRADE_CLICK', '');
     await sendUpgradeInvoice(ctx, user);
     return;
