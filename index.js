@@ -938,6 +938,8 @@ bot.on('callback_query', async (ctx) => {
     const ru = user.lang === 'ru';
 
     DB.logEvent(ctx.from.id, 'MEAL_PLAN', planKey);
+    user.has_meal_plan = 1;
+    DB.updateUser(user);
     await ctx.answerCbQuery();
     await ctx.reply(t(user, 'meal_plan_gen'));
 
@@ -1448,12 +1450,14 @@ bot.on('text', async (ctx) => {
   }
   if (text === '⏰ Meal Reminders') {
     const ru = user.lang === 'ru';
-    // Check if user has completed onboarding
-    if (!user.goal) {
-      await ctx.reply(ru
-        ? '⏰ Напоминания станут доступны после завершения настройки профиля и выбора плана питания.\n\nПожалуйста, сначала завершите настройку профиля 👆'
-        : '⏰ Reminders will be available after you complete your profile setup and choose a meal plan.\n\nPlease complete your profile first 👆',
-        { parse_mode: 'Markdown' });
+    // Check if user has completed onboarding and chosen a meal plan
+    if (!user.goal || !user.has_meal_plan) {
+      const msg = !user.goal
+        ? (ru ? '⏰ Напоминания станут доступны после завершения настройки профиля и выбора плана питания.\n\nПожалуйста, сначала завершите настройку профиля 👆'
+              : '⏰ Reminders will be available after you complete your profile setup and choose a meal plan.\n\nPlease complete your profile first 👆')
+        : (ru ? '⏰ Напоминания станут доступны после выбора плана питания.\n\nНажмите 🥗 *План питания* в меню, чтобы выбрать свой план.'
+              : '⏰ Reminders will be available after you choose a meal plan.\n\nPress 🥗 *Meal Plan* in the menu to choose your plan.');
+      await ctx.reply(msg, { parse_mode: 'Markdown' });
       return;
     }
     if (reminders[ctx.from.id] && reminders[ctx.from.id].length > 0) {

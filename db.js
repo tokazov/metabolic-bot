@@ -76,6 +76,7 @@ try { db.exec('ALTER TABLE users ADD COLUMN trial_expires INTEGER DEFAULT 0'); }
 try { db.exec('ALTER TABLE users ADD COLUMN referral_code TEXT'); } catch(e) {}
 try { db.exec('ALTER TABLE users ADD COLUMN referred_by INTEGER DEFAULT 0'); } catch(e) {}
 try { db.exec('ALTER TABLE users ADD COLUMN trial_used INTEGER DEFAULT 0'); } catch(e) {}
+try { db.exec('ALTER TABLE users ADD COLUMN has_meal_plan INTEGER DEFAULT 0'); } catch(e) {}
 
 // Prepared statements
 const getUser = db.prepare('SELECT * FROM users WHERE id = ?');
@@ -85,7 +86,7 @@ const insertUser = db.prepare(`
 `);
 const updateUser = db.prepare(`
   UPDATE users SET gender=?, age=?, height=?, weight=?, activity_level=?, diet_restrictions=?, pregnancy_status=?, goal=?, is_pro=?,
-  tz_offset=?, lang=?, analysis_count=?, chat_count=?, trial_expires=?, referral_code=?, referred_by=?, trial_used=?, last_active=datetime('now') WHERE id=?
+  tz_offset=?, lang=?, analysis_count=?, chat_count=?, trial_expires=?, referral_code=?, referred_by=?, trial_used=?, has_meal_plan=?, last_active=datetime('now') WHERE id=?
 `);
 const insertSymptom = db.prepare('INSERT INTO symptoms (user_id, text) VALUES (?, ?)');
 const getSymptoms = db.prepare('SELECT * FROM symptoms WHERE user_id = ? ORDER BY created_at DESC LIMIT 20');
@@ -125,7 +126,7 @@ module.exports = {
     updateUser.run(user.gender, user.age, user.height || null, user.weight || null, user.activity_level || null,
       user.diet_restrictions || null, user.pregnancy_status, user.goal, user.is_pro ? 1 : 0, user.tz_offset || 0,
       user.lang || 'en', user.analysis_count, user.chat_count, user.trial_expires || 0,
-      user.referral_code || null, user.referred_by || 0, user.trial_used || 0, user.id);
+      user.referral_code || null, user.referred_by || 0, user.trial_used || 0, user.has_meal_plan || 0, user.id);
   },
   addSymptom: (userId, text) => insertSymptom.run(userId, text),
   getSymptoms: (userId) => getSymptoms.all(userId),
