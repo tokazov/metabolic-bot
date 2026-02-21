@@ -1270,6 +1270,54 @@ bot.on('document', async (ctx) => {
   }
 });
 
+// ─── Voice (STT via Whisper) ───
+bot.on('voice', async (ctx) => {
+  if (!ttsClient) return;
+  const user = DB.ensureUser(ctx.from.id, ctx.from.username, ctx.from.first_name);
+
+  try {
+    const fileLink = await ctx.telegram.getFileLink(ctx.message.voice.file_id);
+    const response = await fetch(fileLink.href);
+    const buffer = Buffer.from(await response.arrayBuffer());
+    const tmpPath = path.join(os.tmpdir(), `voice_${ctx.from.id}_${Date.now()}.ogg`);
+    fs.writeFileSync(tmpPath, buffer);
+
+    const transcript = await ttsClient.audio.transcriptions.create({
+      model: 'whisper-1',
+      file: fs.createReadStream(tmpPath),
+    });
+
+    fs.unlinkSync(tmpPath);
+
+    const text = transcript.text?.trim();
+    if (!text) {
+      await ctx.reply('🤷 Could not recognize speech');
+      return;
+    }
+
+    await ctx.replyWithMarkdown(`🎤 _${text}_`);
+
+    // Process as regular text via AI chat
+    if (!canUse(user, 'chat')) { await sendUpgradeInvoice(ctx, user); return; }
+    user.chat_count++; DB.updateUser(user);
+    DB.logEvent(ctx.from.id, 'VOICE_CHAT', text.slice(0, 100));
+
+    const session = getSession(ctx.from.id);
+    session.history.push({ role: 'user', content: text });
+    if (session.history.length > 6) session.history = session.history.slice(-6);
+    const r = await openai.chat.completions.create({
+      model: AI_MODEL, max_tokens: 5000,
+      messages: [{ role: 'system', content: CHAT_PROMPT + TTS_RULE + (isPro(user) ? '' : '\nUser is on FREE plan. Limit meal/diet plans to 1 day only. Always end meal plans with: "🔒 *Full 7-day plan + shopping list → Pro*"') + profileContext(user) }, ...session.history]
+    });
+    const reply = r.choices[0].message.content;
+    session.history.push({ role: 'assistant', content: reply });
+    await sendLong(ctx, reply);
+  } catch (e) {
+    console.error('Voice error:', e?.message);
+    await ctx.reply('❌ Voice processing error');
+  }
+});
+
 // ─── Text ───
 bot.on('text', async (ctx) => {
   const user = DB.ensureUser(ctx.from.id, ctx.from.username, ctx.from.first_name);
