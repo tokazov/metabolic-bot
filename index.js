@@ -1448,11 +1448,11 @@ bot.on('text', async (ctx) => {
   }
   if (text === '⏰ Meal Reminders') {
     const ru = user.lang === 'ru';
-    // Check if user has completed onboarding (has diet/goal set)
-    if (!user.goal && !user.diet_restrictions) {
+    // Check if user has completed onboarding
+    if (!user.goal) {
       await ctx.reply(ru
-        ? '⏰ Напоминания станут доступны после того, как вы выберете план питания.\n\nНажмите 🥗 *План питания* чтобы начать.'
-        : '⏰ Reminders will be available after you choose a meal plan.\n\nPress 🥗 *Meal Plan* to get started.',
+        ? '⏰ Напоминания станут доступны после завершения настройки профиля и выбора плана питания.\n\nПожалуйста, сначала завершите настройку профиля 👆'
+        : '⏰ Reminders will be available after you complete your profile setup and choose a meal plan.\n\nPlease complete your profile first 👆',
         { parse_mode: 'Markdown' });
       return;
     }
