@@ -20,7 +20,7 @@ const openai = new OpenAI({
   baseURL: process.env.GEMINI_KEY ? 'https://generativelanguage.googleapis.com/v1beta/openai/' : undefined,
 });
 
-const AI_MODEL = process.env.GEMINI_KEY ? 'gemini-2.5-flash' : 'gpt-4o';
+const AI_MODEL = process.env.GEMINI_KEY ? 'gemini-2.5-flash-lite' : 'gpt-4o';
 
 // ─── Config ───
 const FREE_ANALYSIS_LIMIT = 2;
