@@ -3,6 +3,9 @@ const OpenAI = require('openai');
 const https = require('https');
 const http = require('http');
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
 const DB = require('./db');
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
@@ -623,10 +626,40 @@ function profileContext(user) {
 
 async function sendLong(ctx, text) {
   if (text.length > 4000) {
-    for (const p of text.match(/[\s\S]{1,4000}/g)) await ctx.replyWithMarkdown(p).catch(() => ctx.reply(p));
+    const parts = text.match(/[\s\S]{1,4000}/g);
+    let lastMsg;
+    for (const p of parts) lastMsg = await ctx.replyWithMarkdown(p).catch(() => ctx.reply(p));
+    return lastMsg;
   } else {
-    await ctx.replyWithMarkdown(text).catch(() => ctx.reply(text));
+    return await ctx.replyWithMarkdown(text).catch(() => ctx.reply(text));
   }
+}
+
+function stripMarkdown(text) {
+  return text.replace(/[*_`~\[\]()#>]/g, '').replace(/\n{3,}/g, '\n\n');
+}
+
+async function textToVoice(chatId, text) {
+  const clean = stripMarkdown(text).slice(0, 4000);
+  if (!clean.trim()) return;
+  let tmpPath;
+  try {
+    const speech = await openai.audio.speech.create({
+      model: 'tts-1', voice: 'nova', input: clean, response_format: 'opus',
+    });
+    const buffer = Buffer.from(await speech.arrayBuffer());
+    tmpPath = path.join(os.tmpdir(), `tts_${Date.now()}.ogg`);
+    fs.writeFileSync(tmpPath, buffer);
+    await bot.telegram.sendVoice(chatId, { source: tmpPath });
+  } catch (e) {
+    console.error('TTS error:', e?.message);
+  } finally {
+    if (tmpPath && fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
+  }
+}
+
+function ttsButton(msgId) {
+  return { reply_markup: { inline_keyboard: [[{ text: '🔊 Озвучить', callback_data: `tts_${msgId}` }]] } };
 }
 
 function canUse(user, type) {
@@ -804,6 +837,14 @@ bot.on('callback_query', async (ctx) => {
   const user = DB.ensureUser(ctx.from.id, ctx.from.username, ctx.from.first_name);
   const session = getSession(ctx.from.id);
   const data = ctx.callbackQuery.data;
+
+  // TTS callback
+  if (data.startsWith('tts_')) {
+    await ctx.answerCbQuery('🔊 Генерирую голос...');
+    const text = ctx.callbackQuery.message?.text || '';
+    if (text) await textToVoice(ctx.chat.id, text);
+    return;
+  }
 
   // Check trial expiry on every callback
   if (checkTrialExpiry(user)) {
@@ -1028,7 +1069,8 @@ bot.on('callback_query', async (ctx) => {
         model: 'gpt-4o', max_tokens: maxTok,
         messages: [{ role: 'system', content: prompt }, { role: 'user', content: `${plan.en} meal plan. Style: ${plan.hint}.${extra}${profileContext(user)}` }]
       });
-      await sendLong(ctx, r.choices[0].message.content);
+      const sentPlan = await sendLong(ctx, r.choices[0].message.content);
+      if (sentPlan) await ctx.reply('⬆️', ttsButton(sentPlan.message_id)).catch(() => {});
       await ctx.reply(ru ? '👇 Что дальше?' : '👇 What next?', { reply_markup: { inline_keyboard: [
         [{ text: ru ? '🔄 Другой вариант' : '🔄 Another variant', callback_data: 'meal_reroll' }],
         [{ text: ru ? '🔙 Выбрать другой тип' : '🔙 Choose different type', callback_data: 'mp_menu' }]
@@ -1665,7 +1707,8 @@ bot.on('text', async (ctx) => {
     });
     const reply = r.choices[0].message.content;
     session.history.push({ role: 'assistant', content: reply });
-    await sendLong(ctx, reply);
+    const sent = await sendLong(ctx, reply);
+    if (sent) await ctx.reply('⬆️', ttsButton(sent.message_id)).catch(() => {});
   } catch (e) {
     console.error('Chat error:', e?.message);
     await ctx.reply('❌ Error. Try again.');
