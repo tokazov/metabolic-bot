@@ -11,11 +11,16 @@ const DB = require('./db');
 const { i18n: localeI18n, MENUS, MENU_TO_CMD, LANG_FULL, detectLang, langKeyboard } = require('./locales');
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
-const OPENAI_KEY = process.env.OPENAI_KEY;
-if (!BOT_TOKEN || !OPENAI_KEY) { console.error('Set BOT_TOKEN and OPENAI_KEY'); process.exit(1); }
+const OPENAI_KEY = process.env.GEMINI_KEY || process.env.OPENAI_KEY;
+if (!BOT_TOKEN || !OPENAI_KEY) { console.error('Set BOT_TOKEN and GEMINI_KEY/OPENAI_KEY'); process.exit(1); }
 
 const bot = new Telegraf(BOT_TOKEN);
-const openai = new OpenAI({ apiKey: OPENAI_KEY });
+const openai = new OpenAI({
+  apiKey: OPENAI_KEY,
+  baseURL: process.env.GEMINI_KEY ? 'https://generativelanguage.googleapis.com/v1beta/openai/' : undefined,
+});
+
+const AI_MODEL = process.env.GEMINI_KEY ? 'gemini-2.5-flash' : 'gpt-4o';
 
 // ─── Config ───
 const FREE_ANALYSIS_LIMIT = 2;
@@ -454,6 +459,7 @@ function stripMarkdown(text) {
 }
 
 async function textToVoice(chatId, text) {
+  if (process.env.GEMINI_KEY) return; // TTS not supported with Gemini
   const clean = stripMarkdown(text).slice(0, 4000);
   if (!clean.trim()) return;
   let tmpPath;
@@ -867,7 +873,7 @@ bot.on('callback_query', async (ctx) => {
 
     try {
       const r = await openai.chat.completions.create({
-        model: 'gpt-4o', max_tokens: maxTok,
+        model: AI_MODEL, max_tokens: maxTok,
         messages: [{ role: 'system', content: prompt }, { role: 'user', content: `${plan.en} meal plan. Style: ${plan.hint}.${extra}${profileContext(user)}` }]
       });
       const sentPlan = await sendLong(ctx, r.choices[0].message.content);
@@ -1023,7 +1029,7 @@ bot.on('callback_query', async (ctx) => {
     await ctx.reply(t(user, 'detox_generating'));
     try {
       const r = await openai.chat.completions.create({
-        model: 'gpt-4o', max_tokens: 2000,
+        model: AI_MODEL, max_tokens: 2000,
         messages: [
           { role: 'system', content: DETOX_PROMPT },
           { role: 'user', content: `Day ${currentDay} of 7-day detox. Theme: ${theme}.${profileContext(user)}` }
@@ -1115,7 +1121,7 @@ bot.on('photo', async (ctx) => {
 
       // First get structured data for DB
       const jsonResponse = await openai.chat.completions.create({
-        model: 'gpt-4o', max_tokens: 300,
+        model: AI_MODEL, max_tokens: 300,
         messages: [
           { role: 'system', content: FOOD_DIARY_PROMPT },
           { role: 'user', content: [
@@ -1144,7 +1150,7 @@ bot.on('photo', async (ctx) => {
 
       // Also do full food analysis
       const fullResponse = await openai.chat.completions.create({
-        model: 'gpt-4o', max_tokens: 2000,
+        model: AI_MODEL, max_tokens: 2000,
         messages: [
           { role: 'system', content: FOOD_PROMPT },
           { role: 'user', content: [
@@ -1175,7 +1181,7 @@ bot.on('photo', async (ctx) => {
     const caption = ctx.message.caption || '';
 
     const response = await openai.chat.completions.create({
-      model: 'gpt-4o', max_tokens: 4000,
+      model: AI_MODEL, max_tokens: 4000,
       messages: [
         { role: 'system', content: prompt },
         { role: 'user', content: [
@@ -1211,7 +1217,7 @@ bot.on('document', async (ctx) => {
     try {
       const base64 = await getImageBase64(ctx, doc.file_id);
       const response = await openai.chat.completions.create({
-        model: 'gpt-4o', max_tokens: 4000,
+        model: AI_MODEL, max_tokens: 4000,
         messages: [
           { role: 'system', content: ANALYSIS_PROMPT },
           { role: 'user', content: [
@@ -1302,7 +1308,7 @@ bot.on('text', async (ctx) => {
     try {
       const symptoms = DB.getSymptoms(ctx.from.id).map(s => `${s.created_at}: ${s.text}`).join('\n');
       const response = await openai.chat.completions.create({
-        model: 'gpt-4o', max_tokens: 2000,
+        model: AI_MODEL, max_tokens: 2000,
         messages: [
           { role: 'system', content: SYMPTOM_PROMPT },
           { role: 'user', content: `${profileContext(user)}\n\nSymptom history:\n${symptoms}\n\nLatest: ${text}` }
@@ -1341,7 +1347,7 @@ bot.on('text', async (ctx) => {
     await ctx.reply(t(user, 'supplement_gen'));
     try {
       const r = await openai.chat.completions.create({
-        model: 'gpt-4o', max_tokens: 3000,
+        model: AI_MODEL, max_tokens: 3000,
         messages: [{ role: 'system', content: SUPPLEMENT_PROMPT }, { role: 'user', content: `Supplements.${profileContext(user)}` }]
       });
       await sendLong(ctx, r.choices[0].message.content);
@@ -1472,7 +1478,7 @@ bot.on('text', async (ctx) => {
     session.history.push({ role: 'user', content: text });
     if (session.history.length > 6) session.history = session.history.slice(-6);
     const r = await openai.chat.completions.create({
-      model: 'gpt-4o', max_tokens: 1500,
+      model: AI_MODEL, max_tokens: 1500,
       messages: [{ role: 'system', content: CHAT_PROMPT + (isPro(user) ? '' : '\nUser is on FREE plan. Limit meal/diet plans to 1 day only. Always end meal plans with: "🔒 *Full 7-day plan + shopping list → Pro*"') + profileContext(user) }, ...session.history]
     });
     const reply = r.choices[0].message.content;
