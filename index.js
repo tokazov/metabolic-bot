@@ -149,20 +149,35 @@ function getSession(id) {
   return sessions[id];
 }
 
-const UPGRADE_MSG = `🔒 *Free limit reached*
+const STARS_PRICE_7D = 150;  // 150 Stars ≈ $2.50 for 7 days
+const STARS_PRICE_30D = 500; // 500 Stars ≈ $8.30 for 30 days
 
-Upgrade to Metabolic Center Pro:
+const UPGRADE_MSG = `🔒 *Бесплатный лимит исчерпан*
 
-✦ Unlimited blood test analyses
-✦ Unlimited AI health chat
-✦ Personalized meal plans & supplement protocols
-✦ Symptom tracking & pattern detection
-✦ Medical document interpretation
+Metabolic Center Pro:
 
-💰 *Founding price: $19/mo* (locked forever)
-_Future price: $79/mo_
+✦ Безлимитный анализ крови
+✦ Безлимитный AI чат по здоровью
+✦ Персональные планы питания и добавки
+✦ Трекинг симптомов и паттернов
+✦ Интерпретация мед. документов
 
-👉 [Upgrade Now](${CHECKOUT_URL})`;
+Нажмите кнопку ниже для оплаты ⭐`;
+
+// ─── Stars Payment ───
+async function sendUpgradeInvoice(ctx, user) {
+  const lang = user?.lang || 'en';
+  const title = lang === 'ru' ? '💎 Metabolic Center Pro' : '💎 Metabolic Center Pro';
+  const desc = lang === 'ru'
+    ? 'Pro на 7 дней:\n• Безлимитный анализ крови\n• Персональные планы питания\n• AI чат по здоровью\n• Трекинг симптомов'
+    : 'Pro for 7 days:\n• Unlimited blood analysis\n• Personal meal plans\n• AI health chat\n• Symptom tracking';
+  try {
+    await ctx.replyWithInvoice(title, desc, `pro_7d_${ctx.from.id}`, 'XTR', [{ label: 'Pro 7 days', amount: STARS_PRICE_7D }]);
+  } catch(e) {
+    console.error('Invoice error:', e);
+    await sendUpgradeInvoice(ctx, user);
+  }
+}
 
 // ─── Prompts ───
 const ANALYSIS_PROMPT = `You are a metabolic health AI analyst for Metabolic Center — a premium predictive metabolic intelligence platform.
@@ -843,7 +858,7 @@ bot.on('callback_query', async (ctx) => {
   }
 
   if ((data.startsWith('mp_') && data !== 'mp_menu') || data === 'meal_reroll') {
-    if (!canUse(user, 'chat')) { await ctx.replyWithMarkdown(UPGRADE_MSG); return; }
+    if (!canUse(user, 'chat')) { await sendUpgradeInvoice(ctx, user); return; }
     user.chat_count++; DB.updateUser(user);
 
     const planTypes = {
@@ -1167,7 +1182,7 @@ bot.on('photo', async (ctx) => {
     return;
   }
 
-  if (!canUse(user, 'analysis')) { await ctx.replyWithMarkdown(UPGRADE_MSG); return; }
+  if (!canUse(user, 'analysis')) { await sendUpgradeInvoice(ctx, user); return; }
 
   const prompts = { document: DOC_PROMPT, food: FOOD_PROMPT, analysis: ANALYSIS_PROMPT };
   const prompt = prompts[mode] || ANALYSIS_PROMPT;
@@ -1212,7 +1227,7 @@ bot.on('document', async (ctx) => {
   const doc = ctx.message.document;
   if (doc.mime_type && doc.mime_type.startsWith('image/')) {
     const user = DB.ensureUser(ctx.from.id, ctx.from.username, ctx.from.first_name);
-    if (!canUse(user, 'analysis')) { await ctx.replyWithMarkdown(UPGRADE_MSG); return; }
+    if (!canUse(user, 'analysis')) { await sendUpgradeInvoice(ctx, user); return; }
     await ctx.reply('🔬 Analyzing...');
     try {
       const base64 = await getImageBase64(ctx, doc.file_id);
@@ -1299,7 +1314,7 @@ bot.on('text', async (ctx) => {
   // Symptom input
   if (session.awaitingSymptoms) {
     session.awaitingSymptoms = false;
-    if (!canUse(user, 'chat')) { await ctx.replyWithMarkdown(UPGRADE_MSG); return; }
+    if (!canUse(user, 'chat')) { await sendUpgradeInvoice(ctx, user); return; }
     user.chat_count++;
     DB.updateUser(user);
     DB.addSymptom(ctx.from.id, text);
@@ -1341,7 +1356,7 @@ bot.on('text', async (ctx) => {
     return;
   }
   if (text === '💊 Supplement Protocol') {
-    if (!canUse(user, 'chat')) { await ctx.replyWithMarkdown(UPGRADE_MSG); return; }
+    if (!canUse(user, 'chat')) { await sendUpgradeInvoice(ctx, user); return; }
     user.chat_count++; DB.updateUser(user);
     DB.logEvent(ctx.from.id, 'SUPPLEMENT', '');
     await ctx.reply(t(user, 'supplement_gen'));
@@ -1452,7 +1467,7 @@ bot.on('text', async (ctx) => {
       `${t(user, 'chats')}: ${user.chat_count}/${isPro(user) ? '∞' : FREE_CHAT_LIMIT}`,
       `\n👥 ${t(user, 'referral_stats')}: ${refCount}`,
       trialInfo,
-      `\n${isPro(user) ? `⭐ *${t(user, 'pro_member')}*` : `[${t(user, 'upgrade_btn')}](${CHECKOUT_URL})`}`
+      `\n${isPro(user) ? `⭐ *${t(user, 'pro_member')}*` : `💎 Нажмите "Pro подписка" для апгрейда`}`
     ].filter(Boolean).join('\n'));
 
     // Show referral + change language buttons under profile
@@ -1464,13 +1479,12 @@ bot.on('text', async (ctx) => {
   }
   if (text === '⭐ Upgrade to Pro') {
     DB.logEvent(ctx.from.id, 'UPGRADE_CLICK', '');
-    const personalUrl = `${CHECKOUT_BASE}/product/${PADDLE_PRICE_ID}?custom_data[telegram_id]=${ctx.from.id}`;
-    await ctx.replyWithMarkdown(`${t(user, 'upgrade_pro_title')}\n\n${t(user, 'upgrade_pro_body')}\n\n👉 [${t(user, 'subscribe_now')}](${personalUrl})`);
+    await sendUpgradeInvoice(ctx, user);
     return;
   }
 
   // ─── General chat ───
-  if (!canUse(user, 'chat')) { await ctx.replyWithMarkdown(UPGRADE_MSG); return; }
+  if (!canUse(user, 'chat')) { await sendUpgradeInvoice(ctx, user); return; }
   user.chat_count++; DB.updateUser(user);
   DB.logEvent(ctx.from.id, 'CHAT', text.slice(0, 100));
 
@@ -1557,6 +1571,29 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, () => console.log(`Webhook server on port ${PORT}`));
+
+// ─── Stars Payment Handlers ───
+bot.on('pre_checkout_query', async (ctx) => {
+  await ctx.answerPreCheckoutQuery(true);
+});
+
+bot.on('successful_payment', async (ctx) => {
+  const payment = ctx.message.successful_payment;
+  const uid = ctx.from.id;
+  console.log(`Payment: user=${uid}, amount=${payment.total_amount} XTR, payload=${payment.invoice_payload}`);
+
+  // Activate Pro for 7 days
+  const user = getUser(uid);
+  user.is_pro = 1;
+  user.trial_expires = Date.now() + 7 * 24 * 60 * 60 * 1000;
+  saveUser(uid, user);
+
+  const lang = user.lang || 'en';
+  const txt = lang === 'ru'
+    ? `🎉 <b>Pro подписка активирована!</b>\n\nДоступ на 7 дней.\n\n✦ Безлимитный анализ крови\n✦ Персональные планы питания\n✦ AI чат по здоровью\n✦ Трекинг симптомов\n\nПользуйтесь! ✨`
+    : `🎉 <b>Pro activated!</b>\n\n7 days unlimited access.\n\nEnjoy! ✨`;
+  await ctx.replyWithHTML(txt);
+});
 
 // ─── Launch ───
 bot.catch((err) => console.error('Bot error:', err));
