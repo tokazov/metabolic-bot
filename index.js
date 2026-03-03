@@ -1583,6 +1583,25 @@ const server = http.createServer((req, res) => {
     req.on('data', c => body += c);
     req.on('end', () => {
       try {
+        // Verify Paddle webhook signature
+        if (PADDLE_WEBHOOK_SECRET) {
+          const crypto = require('crypto');
+          const sig = req.headers['paddle-signature'] || '';
+          const parts = Object.fromEntries(sig.split(';').map(p => p.split('=')));
+          const ts = parts['ts'] || '';
+          const h1 = parts['h1'] || '';
+          const payload = `${ts}:${body}`;
+          const expected = crypto.createHmac('sha256', PADDLE_WEBHOOK_SECRET).update(payload).digest('hex');
+          if (!h1 || !crypto.timingSafeEqual(Buffer.from(h1), Buffer.from(expected))) {
+            console.error('Paddle webhook: INVALID SIGNATURE');
+            res.writeHead(401);
+            res.end('Invalid signature');
+            return;
+          }
+        } else {
+          console.warn('Paddle webhook: PADDLE_WEBHOOK_SECRET not set — accepting without verification');
+        }
+
         const data = JSON.parse(body);
         const eventType = data.event_type;
         const customData = data.data?.custom_data || {};
