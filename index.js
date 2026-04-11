@@ -1033,7 +1033,7 @@ bot.on('callback_query', async (ctx) => {
       const r = await openai.chat.completions.create({
         model: AI_MODEL, max_tokens: 4000,
         messages: [
-          { role: 'system', content: DETOX_PROMPT + TTS_RULE },
+          { role: 'system', content: DETOX_PROMPT + TTS_RULE + langInstruction(user) },
           { role: 'user', content: `Day ${currentDay} of 7-day detox. Theme: ${theme}.${profileContext(user)}` }
         ]
       });
@@ -1154,7 +1154,7 @@ bot.on('photo', async (ctx) => {
       const fullResponse = await openai.chat.completions.create({
         model: AI_MODEL, max_tokens: 4000,
         messages: [
-          { role: 'system', content: FOOD_PROMPT + TTS_RULE },
+          { role: 'system', content: FOOD_PROMPT + TTS_RULE + langInstruction(user) },
           { role: 'user', content: [
             { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${base64}`, detail: 'high' } },
             { type: 'text', text: `${caption || 'Analyze this meal.'}${profileContext(user)}` }
@@ -1221,7 +1221,7 @@ bot.on('document', async (ctx) => {
       const response = await openai.chat.completions.create({
         model: AI_MODEL, max_tokens: 4000,
         messages: [
-          { role: 'system', content: ANALYSIS_PROMPT + TTS_RULE },
+          { role: 'system', content: ANALYSIS_PROMPT + TTS_RULE + langInstruction(user) },
           { role: 'user', content: [
             { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${base64}`, detail: 'high' } },
             { type: 'text', text: `Analyze.${profileContext(user)}` }
@@ -1278,7 +1278,7 @@ bot.on('voice', async (ctx) => {
     if (session.history.length > 6) session.history = session.history.slice(-6);
     const r = await openai.chat.completions.create({
       model: AI_MODEL, max_tokens: 1200,
-      messages: [{ role: 'system', content: CHAT_PROMPT + TTS_RULE + `\nCRITICAL: Always respond in ${LANG_FULL[user.lang] || 'the same language the user writes in'}. Never switch languages.` + (isPro(user) ? '' : '\nUser is on FREE plan. Limit meal/diet plans to 1 day only. Always end meal plans with: "🔒 *Full 7-day plan + shopping list → Pro*"') + profileContext(user) }, ...session.history]
+      messages: [{ role: 'system', content: CHAT_PROMPT + TTS_RULE + langInstruction(user) + `\nCRITICAL: Always respond in ${LANG_FULL[user.lang] || 'the same language the user writes in'}. Never switch languages.` + (isPro(user) ? '' : '\nUser is on FREE plan. Limit meal/diet plans to 1 day only. Always end meal plans with: "🔒 *Full 7-day plan + shopping list → Pro*"') + profileContext(user) }, ...session.history]
     });
     const reply = r.choices[0].message.content;
     session.history.push({ role: 'assistant', content: reply });
@@ -1363,7 +1363,7 @@ bot.on('text', async (ctx) => {
       const response = await openai.chat.completions.create({
         model: AI_MODEL, max_tokens: 4000,
         messages: [
-          { role: 'system', content: SYMPTOM_PROMPT + TTS_RULE },
+          { role: 'system', content: SYMPTOM_PROMPT + TTS_RULE + langInstruction(user) },
           { role: 'user', content: `${profileContext(user)}\n\nSymptom history:\n${symptoms}\n\nLatest: ${text}` }
         ]
       });
@@ -1401,7 +1401,7 @@ bot.on('text', async (ctx) => {
     try {
       const r = await openai.chat.completions.create({
         model: AI_MODEL, max_tokens: 5000,
-        messages: [{ role: 'system', content: SUPPLEMENT_PROMPT + TTS_RULE }, { role: 'user', content: `Supplements.${profileContext(user)}` }]
+        messages: [{ role: 'system', content: SUPPLEMENT_PROMPT + TTS_RULE + langInstruction(user) }, { role: 'user', content: `Supplements.${profileContext(user)}` }]
       });
       await sendLong(ctx, r.choices[0].message.content);
     } catch (e) { await ctx.reply('❌ Error. Try again.'); }
@@ -1536,7 +1536,7 @@ bot.on('text', async (ctx) => {
     if (session.history.length > 6) session.history = session.history.slice(-6);
     const r = await openai.chat.completions.create({
       model: AI_MODEL, max_tokens: 5000,
-      messages: [{ role: 'system', content: CHAT_PROMPT + TTS_RULE + `\nCRITICAL: Always respond in ${LANG_FULL[user.lang] || 'the same language the user writes in'}. Never switch languages.` + (isPro(user) ? '' : '\nUser is on FREE plan. Limit meal/diet plans to 1 day only. Always end meal plans with: "🔒 *Full 7-day plan + shopping list → Pro*"') + profileContext(user) }, ...session.history]
+      messages: [{ role: 'system', content: CHAT_PROMPT + TTS_RULE + langInstruction(user) + `\nCRITICAL: Always respond in ${LANG_FULL[user.lang] || 'the same language the user writes in'}. Never switch languages.` + (isPro(user) ? '' : '\nUser is on FREE plan. Limit meal/diet plans to 1 day only. Always end meal plans with: "🔒 *Full 7-day plan + shopping list → Pro*"') + profileContext(user) }, ...session.history]
     });
     const reply = r.choices[0].message.content;
     session.history.push({ role: 'assistant', content: reply });
