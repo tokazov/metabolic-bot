@@ -1306,7 +1306,7 @@ bot.on('voice', async (ctx) => {
     if (session.history.length > 6) session.history = session.history.slice(-6);
     const r = await openai.chat.completions.create({
       model: AI_MODEL, max_tokens: 5000,
-      messages: [{ role: 'system', content: CHAT_PROMPT + TTS_RULE + (isPro(user) ? '' : '\nUser is on FREE plan. Limit meal/diet plans to 1 day only. Always end meal plans with: "🔒 *Full 7-day plan + shopping list → Pro*"') + profileContext(user) }, ...session.history]
+      messages: [{ role: 'system', content: CHAT_PROMPT + TTS_RULE + `\nCRITICAL: Always respond in ${LANG_FULL[user.lang] || 'the same language the user writes in'}. Never switch languages.` + (isPro(user) ? '' : '\nUser is on FREE plan. Limit meal/diet plans to 1 day only. Always end meal plans with: "🔒 *Full 7-day plan + shopping list → Pro*"') + profileContext(user) }, ...session.history]
     });
     const reply = r.choices[0].message.content;
     session.history.push({ role: 'assistant', content: reply });
@@ -1561,7 +1561,7 @@ bot.on('text', async (ctx) => {
     if (session.history.length > 6) session.history = session.history.slice(-6);
     const r = await openai.chat.completions.create({
       model: AI_MODEL, max_tokens: 5000,
-      messages: [{ role: 'system', content: CHAT_PROMPT + TTS_RULE + (isPro(user) ? '' : '\nUser is on FREE plan. Limit meal/diet plans to 1 day only. Always end meal plans with: "🔒 *Full 7-day plan + shopping list → Pro*"') + profileContext(user) }, ...session.history]
+      messages: [{ role: 'system', content: CHAT_PROMPT + TTS_RULE + `\nCRITICAL: Always respond in ${LANG_FULL[user.lang] || 'the same language the user writes in'}. Never switch languages.` + (isPro(user) ? '' : '\nUser is on FREE plan. Limit meal/diet plans to 1 day only. Always end meal plans with: "🔒 *Full 7-day plan + shopping list → Pro*"') + profileContext(user) }, ...session.history]
     });
     const reply = r.choices[0].message.content;
     session.history.push({ role: 'assistant', content: reply });
