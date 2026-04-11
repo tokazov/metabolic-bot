@@ -10,6 +10,14 @@ const DB = require('./db');
 
 const { i18n: localeI18n, MENUS, MENU_TO_CMD, LANG_FULL, detectLang, langKeyboard } = require('./locales');
 
+// Language instruction helper for AI prompts
+function langInstruction(user) {
+  const langMap = { en: 'English', ru: 'Russian', ka: 'Georgian', tr: 'Turkish', kk: 'Kazakh', uz: 'Uzbek', ar: 'Arabic' };
+  const lang = langMap[user && user.lang] || 'the same language the user writes in';
+  return `\nCRITICAL: Always respond in ${lang}. Never switch to another language.`;
+}
+
+
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const OPENAI_KEY = process.env.GEMINI_KEY || process.env.OPENAI_KEY;
 if (!BOT_TOKEN || !OPENAI_KEY) { console.error('Set BOT_TOKEN and GEMINI_KEY/OPENAI_KEY'); process.exit(1); }
