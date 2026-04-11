@@ -149,8 +149,7 @@ function getSession(id) {
   return sessions[id];
 }
 
-const STARS_PRICE_7D = 150;  // 150 Stars ≈ $2.50 for 7 days
-const STARS_PRICE_30D = 500; // 500 Stars ≈ $8.30 for 30 days
+const STARS_PRICE_30D = 600; // 600 Stars ≈ $10 for 30 days
 
 const UPGRADE_MSG = `🔒 *Бесплатный лимит исчерпан*
 
@@ -170,14 +169,14 @@ async function sendUpgradeInvoice(ctx, user) {
   const title = lang === 'ru' ? '💎 Metabolic Center Pro' : '💎 Metabolic Center Pro';
   const desc = lang === 'ru'
     ? 'Pro на 7 дней:\n• Безлимитный анализ крови\n• Персональные планы питания\n• AI чат по здоровью\n• Трекинг симптомов'
-    : 'Pro for 7 days:\n• Unlimited blood analysis\n• Personal meal plans\n• AI health chat\n• Symptom tracking';
+    : 'Pro for 30 days:\n• Unlimited blood analysis\n• Personal meal plans\n• AI health chat\n• Symptom tracking';
   try {
     await ctx.replyWithInvoice({
       title,
       description: desc,
       payload: `pro_7d_${ctx.from.id}`,
       currency: 'XTR',
-      prices: [{ label: 'Pro 7 days', amount: STARS_PRICE_7D }]
+      prices: [{ label: 'Pro 30 days — $10', amount: STARS_PRICE_30D }]
     });
   } catch(e) {
     console.error('Invoice error:', e);
@@ -1669,16 +1668,16 @@ bot.on('successful_payment', async (ctx) => {
   const uid = ctx.from.id;
   console.log(`Payment: user=${uid}, amount=${payment.total_amount} XTR, payload=${payment.invoice_payload}`);
 
-  // Activate Pro for 7 days
+  // Activate Pro for 30 days
   const user = getUser(uid);
   user.is_pro = 1;
-  user.trial_expires = Date.now() + 7 * 24 * 60 * 60 * 1000;
+  user.trial_expires = Date.now() + 30 * 24 * 60 * 60 * 1000;
   saveUser(uid, user);
 
   const lang = user.lang || 'en';
   const txt = lang === 'ru'
-    ? `🎉 <b>Pro подписка активирована!</b>\n\nДоступ на 7 дней.\n\n✦ Безлимитный анализ крови\n✦ Персональные планы питания\n✦ AI чат по здоровью\n✦ Трекинг симптомов\n\nПользуйтесь! ✨`
-    : `🎉 <b>Pro activated!</b>\n\n7 days unlimited access.\n\nEnjoy! ✨`;
+    ? `🎉 <b>Pro подписка активирована!</b>\n\nДоступ на 30 дней.\n\n✦ Безлимитный анализ крови\n✦ Персональные планы питания\n✦ AI чат по здоровью\n✦ Трекинг симптомов\n\nПользуйтесь! ✨`
+    : `🎉 <b>Pro activated!</b>\n\n30 days unlimited access.\n\nEnjoy! ✨`;
   await ctx.replyWithHTML(txt);
 });
 
