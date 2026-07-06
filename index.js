@@ -11,10 +11,20 @@ const DB = require('./db');
 const { i18n: localeI18n, MENUS, MENU_TO_CMD, LANG_FULL, detectLang, langKeyboard } = require('./locales');
 
 // Language instruction helper for AI prompts
-function langInstruction(user) {
+function langInstruction(user, msgText) {
+  // Detect language from message text if possible
+  if (msgText) {
+    const hasCyrillic = /[\u0400-\u04FF]/.test(msgText);
+    const hasGeorgian = /[\u10A0-\u10FF]/.test(msgText);
+    const hasArabic = /[\u0600-\u06FF]/.test(msgText);
+    if (hasCyrillic) return '\nCRITICAL: The user wrote in Russian/Cyrillic. You MUST respond ONLY in Russian. Never use English.';
+    if (hasGeorgian) return '\nCRITICAL: The user wrote in Georgian. You MUST respond ONLY in Georgian. Never use English.';
+    if (hasArabic) return '\nCRITICAL: The user wrote in Arabic. You MUST respond ONLY in Arabic. Never use English.';
+  }
   const langMap = { en: 'English', ru: 'Russian', ka: 'Georgian', tr: 'Turkish', kk: 'Kazakh', uz: 'Uzbek', ar: 'Arabic' };
-  const lang = langMap[user && user.lang] || 'the same language the user writes in';
-  return `\nCRITICAL: Always respond in ${lang}. Never switch to another language.`;
+  const lang = (user && user.lang && user.lang !== 'en') ? langMap[user.lang] : null;
+  if (lang) return `\nCRITICAL: Always respond in ${lang}. Never switch to another language.`;
+  return '\nCRITICAL: Always respond in the SAME language the user writes in. If they write in Russian — respond in Russian. If in English — in English. Never switch languages.';
 }
 
 
@@ -1479,7 +1489,7 @@ bot.on('voice', async (ctx) => {
     if (session.history.length > 6) session.history = session.history.slice(-6);
     const r = await openai.chat.completions.create({
       model: AI_MODEL, max_tokens: 1200,
-      messages: [{ role: 'system', content: CHAT_PROMPT + TTS_RULE + langInstruction(user) + `\nCRITICAL: Always respond in ${LANG_FULL[user.lang] || 'the same language the user writes in'}. Never switch languages.` + (isPro(user) ? '' : '\nUser is on FREE plan. Limit meal/diet plans to 1 day only. Always end meal plans with: "🔒 *Full 7-day plan + shopping list → Pro*"') + profileContext(user) }, ...session.history]
+      messages: [{ role: 'system', content: CHAT_PROMPT + TTS_RULE + langInstruction(user, text) + + (isPro(user) ? '' : '\nUser is on FREE plan. Limit meal/diet plans to 1 day only. Always end meal plans with: "🔒 *Full 7-day plan + shopping list → Pro*"') + profileContext(user) }, ...session.history]
     });
     const reply = r.choices[0].message.content;
     session.history.push({ role: 'assistant', content: reply });
@@ -1564,7 +1574,7 @@ bot.on('text', async (ctx) => {
       const response = await openai.chat.completions.create({
         model: AI_MODEL, max_tokens: 2000,
         messages: [
-          { role: 'system', content: SYMPTOM_PROMPT + TTS_RULE + langInstruction(user) },
+          { role: 'system', content: SYMPTOM_PROMPT + TTS_RULE + langInstruction(user, text) },
           { role: 'user', content: `${profileContext(user)}\n\nSymptom history:\n${symptoms}\n\nLatest: ${text}` }
         ]
       });
@@ -1749,7 +1759,7 @@ bot.on('text', async (ctx) => {
     if (session.history.length > 6) session.history = session.history.slice(-6);
     const r = await openai.chat.completions.create({
       model: AI_MODEL, max_tokens: 5000,
-      messages: [{ role: 'system', content: CHAT_PROMPT + TTS_RULE + langInstruction(user) + `\nCRITICAL: Always respond in ${LANG_FULL[user.lang] || 'the same language the user writes in'}. Never switch languages.` + (isPro(user) ? '' : '\nUser is on FREE plan. Limit meal/diet plans to 1 day only. Always end meal plans with: "🔒 *Full 7-day plan + shopping list → Pro*"') + profileContext(user) }, ...session.history]
+      messages: [{ role: 'system', content: CHAT_PROMPT + TTS_RULE + langInstruction(user, text) + + (isPro(user) ? '' : '\nUser is on FREE plan. Limit meal/diet plans to 1 day only. Always end meal plans with: "🔒 *Full 7-day plan + shopping list → Pro*"') + profileContext(user) }, ...session.history]
     });
     const reply = r.choices[0].message.content;
     session.history.push({ role: 'assistant', content: reply });
