@@ -1560,9 +1560,9 @@ bot.on('text', async (ctx) => {
     DB.logEvent(ctx.from.id, 'SYMPTOM', text.slice(0, 100));
     await ctx.reply('🔍 Analyzing symptoms...');
     try {
-      const symptoms = DB.getSymptoms(ctx.from.id).map(s => `${s.created_at}: ${s.text}`).join('\n');
+      const symptoms = DB.getSymptoms(ctx.from.id).slice(0, 5).map(s => `${s.created_at}: ${s.text}`).join('\n');
       const response = await openai.chat.completions.create({
-        model: AI_MODEL, max_tokens: 4000,
+        model: AI_MODEL, max_tokens: 2000,
         messages: [
           { role: 'system', content: SYMPTOM_PROMPT + TTS_RULE + langInstruction(user) },
           { role: 'user', content: `${profileContext(user)}\n\nSymptom history:\n${symptoms}\n\nLatest: ${text}` }
@@ -1570,8 +1570,9 @@ bot.on('text', async (ctx) => {
       });
       await sendLong(ctx, response.choices[0].message.content);
     } catch (e) {
-      console.error('Symptom error:', e?.message);
-      await ctx.reply('❌ Error. Try again.');
+      console.error('Symptom error:', e?.message, e?.status, JSON.stringify(e?.error));
+      const errMsg = e?.status === 429 ? '⏳ Сервер перегружен, попробуйте через минуту.' : '❌ Ошибка. Попробуйте снова.';
+      await ctx.reply(errMsg);
     }
     return;
   }
