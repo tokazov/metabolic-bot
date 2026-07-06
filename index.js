@@ -403,6 +403,60 @@ Include:
 Make it practical, specific, and encouraging. Tailor to user profile.
 Format with emojis and clear structure.`;
 
+
+const BIOAGE_PROMPT = `You are a biological age assessment AI for Metabolic Center.
+
+The user has completed a 9-question lifestyle assessment. Based on their answers AND their profile data (if available), calculate their estimated biological age.
+
+SCORING FRAMEWORK:
+- Each positive answer subtracts years from chronological age
+- Each negative answer adds years
+- Base: chronological age
+- Max reduction: -12 years (excellent lifestyle)
+- Max increase: +15 years (very poor lifestyle)
+
+SCORING WEIGHTS:
+Sleep (Q1): Best=−3, Average=−1, Poor=+3, Irregular=+2
+Activity (Q2): 5+days=−3, 3-4=−1, 1-2=+2, None=+4
+Nutrition (Q3): Whole=−3, Balanced=−1, Processed=+3, Junk=+5
+Stress (Q4): Low=−2, Moderate=0, High=+3, VeryHigh=+5
+Habits (Q5): None=−2, OccAlcohol=0, Smoking=+4, Both=+6
+Water (Q6): 2L+=−1, 1-2L=0, Under1L=+2, RarelyTrack=+1
+Energy (Q7): High=−2, GoodMorning=−1, Low=+2, OnlyCoffee=+3
+Mental (Q8): Sharp=−2, Average=0, Foggy=+2, Poor=+3
+Recovery (Q9): Fast=−2, Average=0, Slow=+2, VeryHard=+4
+
+Also adjust ±1-2 years if profile data (blood tests, food diary) is available.
+
+RESPONSE FORMAT (always in user's language):
+━━━━━━━━━━━━━━━━━━━━━
+🧬 BIOLOGICAL AGE RESULT
+━━━━━━━━━━━━━━━━━━━━━
+📅 Chronological age: XX years
+🧬 Biological age: XX years
+[emoji based on result: 🔥 if bio < chrono, ✅ if equal, ⚠️ if slightly older, 🚨 if significantly older]
+
+[1-2 sentence interpretation of what this means for them]
+
+💪 Your strengths:
+• [top 2-3 positive habits from their answers]
+
+⚠️ Areas to improve:
+• [top 2-3 negative factors]
+
+🎯 Priority action:
+[single most impactful change they can make]
+
+━━━━━━━━━━━━━━━━━━━━━
+_(Lifestyle-based estimate. Not a medical diagnosis. For precise biological age assessment, consider comprehensive blood biomarker testing.)_
+
+IMPORTANT:
+- If user has no chronological age in profile, estimate based on answers quality and say "estimated range: 25-35" type
+- Always include the disclaimer line
+- Be encouraging but honest
+- Keep the total response under 400 words
+`;
+
 // ─── Helpers ───
 function downloadFile(url) {
   return new Promise((resolve, reject) => {
@@ -515,6 +569,97 @@ function mealPlanKeyboard(user) {
     [{ text: t(user, 'mp_vegan'), callback_data: 'mp_vegan' }],
     [{ text: t(user, 'mp_longevity'), callback_data: 'mp_longevity' }],
   ];
+}
+
+
+// ─── Bio Age Test ───
+const BIOAGE_QUESTIONS = [
+  'bioage_q1', 'bioage_q2', 'bioage_q3', 'bioage_q4', 'bioage_q5',
+  'bioage_q6', 'bioage_q7', 'bioage_q8', 'bioage_q9'
+];
+
+async function sendBioAgeQuestion(ctx, user, step) {
+  const lang = user.lang || 'en';
+  const qKey = BIOAGE_QUESTIONS[step];
+  const qText = i18n[lang]?.[qKey] || i18n.en[qKey] || qKey;
+  const answers = i18n[lang]?.[qKey + '_a'] || i18n.en[qKey + '_a'] || ['A', 'B', 'C', 'D'];
+  
+  await ctx.replyWithMarkdown(`*${step + 1}/9* ${qText}`, {
+    reply_markup: {
+      inline_keyboard: answers.map((a, i) => [{ 
+        text: a, 
+        callback_data: `bioage_ans_${step}_${i}` 
+      }])
+    }
+  });
+}
+
+async function calculateBioAge(ctx, user, answers) {
+  const lang = user.lang || 'en';
+  const calcMsg = i18n[lang]?.bioage_calculating || i18n.en.bioage_calculating;
+  await ctx.reply(calcMsg);
+  
+  const qLabels = [
+    'Sleep', 'Physical activity', 'Nutrition', 'Stress', 
+    'Bad habits', 'Water intake', 'Energy level', 'Mental clarity', 'Recovery'
+  ];
+  
+  const answerOptions = {
+    0: ['7-9h great quality', '6-7h average', 'Under 6h or poor', 'Irregular schedule'],
+    1: ['5+ days active', '3-4 days', '1-2 days', 'Almost none'],
+    2: ['Mostly whole foods', 'Balanced occasional junk', 'Lots processed food', 'Mostly junk'],
+    3: ['Low manage well', 'Moderate', 'High chronic stress', 'Very high'],
+    4: ['None', 'Occasional alcohol', 'Smoke/vape', 'Smoking + alcohol'],
+    5: ['2+ liters', '1-2 liters', 'Under 1 liter', 'Rarely track'],
+    6: ['High energy all day', 'Good morning drops later', 'Low often tired', 'Only with coffee'],
+    7: ['Sharp and focused', 'Average occasional fog', 'Often foggy', 'Poor concentration daily'],
+    8: ['Fast 1-2 days', 'Average 3-4 days', 'Slow week+', 'Very hard to recover']
+  };
+  
+  const answerSummary = answers.map((ans, i) => 
+    `Q${i+1} ${qLabels[i]}: ${answerOptions[i]?.[ans] || ans}`
+  ).join('\n');
+  
+  try {
+    const r = await openai.chat.completions.create({
+      model: AI_MODEL, max_tokens: 800,
+      messages: [
+        { role: 'system', content: BIOAGE_PROMPT + langInstruction(user) },
+        { role: 'user', content: `${profileContext(user)}\n\nLifestyle Assessment Results:\n${answerSummary}` }
+      ]
+    });
+    
+    const result = r.choices[0].message.content;
+    DB.logEvent(ctx.from.id, 'BIOAGE_COMPLETE', answerSummary.slice(0, 200));
+    
+    const shareHint = i18n[lang]?.bioage_share_hint || i18n.en.bioage_share_hint;
+    const upsellText = i18n[lang]?.bioage_upsell || i18n.en.bioage_upsell;
+    const upgradeBtnText = i18n[lang]?.bioage_upgrade_btn || i18n.en.bioage_upgrade_btn;
+    const retakeText = i18n[lang]?.bioage_retake || i18n.en.bioage_retake;
+    
+    await sendLong(ctx, result, { showTts: false });
+    await ctx.replyWithMarkdown(shareHint);
+    
+    if (!isPro(user)) {
+      await ctx.replyWithMarkdown(upsellText, {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: upgradeBtnText, callback_data: 'upgrade_pro' }],
+            [{ text: retakeText, callback_data: 'bioage_retake' }]
+          ]
+        }
+      });
+    } else {
+      await ctx.reply('', {
+        reply_markup: {
+          inline_keyboard: [[{ text: retakeText, callback_data: 'bioage_retake' }]]
+        }
+      });
+    }
+  } catch (e) {
+    console.error('BioAge error:', e?.message);
+    await ctx.reply('❌ Error calculating. Try again.');
+  }
 }
 
 // ─── Commands ───
@@ -655,6 +800,63 @@ bot.on('callback_query', async (ctx) => {
   // Check trial expiry on every callback
   if (checkTrialExpiry(user)) {
     await bot.telegram.sendMessage(ctx.from.id, t(user, 'trial_expired'), { parse_mode: 'Markdown' }).catch(() => {});
+  }
+
+
+  // Bio Age callbacks
+  if (data === 'bioage_retake') {
+    await ctx.answerCbQuery();
+    const session = getSession(ctx.from.id);
+    session.bioage = { answers: [], step: 0 };
+    DB.logEvent(ctx.from.id, 'BIOAGE_RETAKE', '');
+    const lang = user.lang || 'en';
+    const intro = i18n[lang]?.bioage_intro || i18n.en.bioage_intro;
+    await ctx.replyWithMarkdown(intro);
+    await sendBioAgeQuestion(ctx, user, 0);
+    return;
+  }
+
+  if (data === 'upgrade_pro') {
+    await ctx.answerCbQuery();
+    await sendUpgradeInvoice(ctx, user);
+    return;
+  }
+
+  if (data.startsWith('bioage_ans_')) {
+    await ctx.answerCbQuery('✅');
+    const parts = data.split('_');
+    const step = parseInt(parts[2]);
+    const ansIdx = parseInt(parts[3]);
+    const session = getSession(ctx.from.id);
+    
+    if (!session.bioage) session.bioage = { answers: [], step: 0 };
+    session.bioage.answers[step] = ansIdx;
+    
+    // Edit the question message to show selected answer
+    const lang = user.lang || 'en';
+    const qKey = BIOAGE_QUESTIONS[step];
+    const answers = i18n[lang]?.[qKey + '_a'] || i18n.en[qKey + '_a'] || [];
+    const selectedText = answers[ansIdx] || ansIdx;
+    
+    try {
+      await ctx.editMessageReplyMarkup({
+        inline_keyboard: answers.map((a, i) => [{ 
+          text: i === ansIdx ? '✅ ' + a : a,
+          callback_data: `bioage_ans_${step}_${i}`
+        }])
+      });
+    } catch(e) {}
+    
+    const nextStep = step + 1;
+    if (nextStep < BIOAGE_QUESTIONS.length) {
+      session.bioage.step = nextStep;
+      await sendBioAgeQuestion(ctx, user, nextStep);
+    } else {
+      // All questions answered — calculate
+      await calculateBioAge(ctx, user, session.bioage.answers);
+      session.bioage = null;
+    }
+    return;
   }
 
   if (data.startsWith('lang_')) {
@@ -1480,6 +1682,17 @@ bot.on('text', async (ctx) => {
         ]}
       });
     }
+    return;
+  }
+
+  if (text === '🧬 Bio Age Test') {
+    DB.logEvent(ctx.from.id, 'BIOAGE_START', '');
+    const session = getSession(ctx.from.id);
+    session.bioage = { answers: [], step: 0 };
+    const lang = user.lang || 'en';
+    const intro = i18n[lang]?.bioage_intro || i18n.en.bioage_intro;
+    await ctx.replyWithMarkdown(intro);
+    await sendBioAgeQuestion(ctx, user, 0);
     return;
   }
 
