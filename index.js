@@ -485,9 +485,22 @@ async function getImageBase64(ctx, fileId) {
   return (await downloadFile(url)).toString('base64');
 }
 
-function profileContext(user) {
-  const lang = LANG_FULL[user?.lang] || 'English';
-  let s = `\nIMPORTANT: You MUST respond ONLY in ${lang}. Do not use any other language.`;
+function profileContext(user, msgText) {
+  // If message text has detectable script, don't override language here
+  let s = '';
+  if (msgText) {
+    const hasCyrillic = /[\u0400-\u04FF]/.test(msgText);
+    const hasGeorgian = /[\u10A0-\u10FF]/.test(msgText);
+    const hasArabic = /[\u0600-\u06FF]/.test(msgText);
+    if (!hasCyrillic && !hasGeorgian && !hasArabic) {
+      const lang = LANG_FULL[user?.lang] || 'English';
+      s = `\nIMPORTANT: You MUST respond ONLY in ${lang}. Do not use any other language.`;
+    }
+    // if cyrillic/georgian/arabic detected - langInstruction already handles it
+  } else {
+    const lang = LANG_FULL[user?.lang] || 'English';
+    s = `\nIMPORTANT: You MUST respond ONLY in ${lang}. Do not use any other language.`;
+  }
   if (!user || (!user.gender && !user.age)) return s;
   s += `\nPatient: ${user.gender || '?'}, ${user.age || '?'} years`;
   if (user.height) s += `, ${user.height} cm`;
@@ -1489,7 +1502,7 @@ bot.on('voice', async (ctx) => {
     if (session.history.length > 6) session.history = session.history.slice(-6);
     const r = await openai.chat.completions.create({
       model: AI_MODEL, max_tokens: 1200,
-      messages: [{ role: 'system', content: CHAT_PROMPT + TTS_RULE + langInstruction(user, text) + (isPro(user) ? '' : '\nUser is on FREE plan. Limit meal/diet plans to 1 day only. Always end meal plans with: "🔒 *Full 7-day plan + shopping list → Pro*"') + profileContext(user) }, ...session.history]
+      messages: [{ role: 'system', content: CHAT_PROMPT + TTS_RULE + langInstruction(user, text) + (isPro(user) ? '' : '\nUser is on FREE plan. Limit meal/diet plans to 1 day only. Always end meal plans with: "🔒 *Full 7-day plan + shopping list → Pro*"') + profileContext(user, text) }, ...session.history]
     });
     const reply = r.choices[0].message.content;
     session.history.push({ role: 'assistant', content: reply });
@@ -1575,7 +1588,7 @@ bot.on('text', async (ctx) => {
         model: AI_MODEL, max_tokens: 2000,
         messages: [
           { role: 'system', content: SYMPTOM_PROMPT + TTS_RULE + langInstruction(user, text) },
-          { role: 'user', content: `${profileContext(user)}\n\nSymptom history:\n${symptoms}\n\nLatest: ${text}` }
+          { role: 'user', content: `${profileContext(user, text)}\n\nSymptom history:\n${symptoms}\n\nLatest: ${text}` }
         ]
       });
       await sendLong(ctx, response.choices[0].message.content);
@@ -1759,7 +1772,7 @@ bot.on('text', async (ctx) => {
     if (session.history.length > 6) session.history = session.history.slice(-6);
     const r = await openai.chat.completions.create({
       model: AI_MODEL, max_tokens: 5000,
-      messages: [{ role: 'system', content: CHAT_PROMPT + TTS_RULE + langInstruction(user, text) + (isPro(user) ? '' : '\nUser is on FREE plan. Limit meal/diet plans to 1 day only. Always end meal plans with: "🔒 *Full 7-day plan + shopping list → Pro*"') + profileContext(user) }, ...session.history]
+      messages: [{ role: 'system', content: CHAT_PROMPT + TTS_RULE + langInstruction(user, text) + (isPro(user) ? '' : '\nUser is on FREE plan. Limit meal/diet plans to 1 day only. Always end meal plans with: "🔒 *Full 7-day plan + shopping list → Pro*"') + profileContext(user, text) }, ...session.history]
     });
     const reply = r.choices[0].message.content;
     session.history.push({ role: 'assistant', content: reply });
